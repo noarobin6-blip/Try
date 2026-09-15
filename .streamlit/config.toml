@@ -1,12 +1,12 @@
-# Thème de l'application — aligné sur la palette « sombre » de core.py.
-# Sans ce fichier, les widgets Streamlit resteraient clairs autour de
-# graphiques sombres.
+# Thème des widgets Streamlit — aligné sur le thème « institutionnel » de
+# core.py, qui est celui du produit. Le sélecteur d'apparence de l'application
+# repeint ensuite les surfaces en CSS pour les thèmes sombre et clair.
 [theme]
-base = "dark"
-primaryColor = "#3987e5"
-backgroundColor = "#0d1014"
-secondaryBackgroundColor = "#14181e"
-textColor = "#eef2f6"
+base = "light"
+primaryColor = "#16314f"
+backgroundColor = "#f5f5f2"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#111823"
 font = "sans serif"
 
 [browser]

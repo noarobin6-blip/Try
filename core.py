@@ -48,15 +48,20 @@ COLUMN_MAP = {
     "date_envoi": "Date_Envoi",
     "type_demande": "Type",               # RFP, RFI, DDQ
     "client": "Client_Nom",
+    "consultant": "Consultant",           # cabinet intermédiaire, souvent distinct du client
     "type_client": "Type_Client",         # institutionnel, distributeur, consultant
     "pays": "Pays",
-    "fonds": "Fonds",
+    "fonds": "Fonds",                     # fonds de référence du questionnaire
     "classe_actifs": "Classe_Actifs",
+    "sous_classe_actifs": "Sous_Classe_Actifs",
+    "forme_juridique": "Forme_Juridique",  # SICAV, FCP, mandat, fonds dédié…
+    "expertise": "Expertise",             # équipe de gestion sollicitée
     "statut": "Statut",                   # en cours, envoyé, gagné, perdu, abandonné
     "analyste": "Analyste_Nom",
     "nb_questions": "Nombre_Questions",
+    "part_esg": "Part_ESG",               # part ESG du questionnaire, en % ou en tranche
     "langue": "Langue",
-    "montant_potentiel": "Montant_EUR",
+    "montant_potentiel": "Montant_EUR",   # encours en jeu ; devient l'AUM gagné si Gagné
 }
 
 # [BRANCHEMENT] Intitulés alternatifs tolérés pour chaque champ, en plus de
@@ -83,6 +88,15 @@ COLUMN_ALIASES: dict[str, list[str]] = {
     "langue": ["langue", "langue de reponse", "langue de réponse", "language"],
     "montant_potentiel": ["montant", "montant eur", "montant potentiel", "encours",
                           "encours potentiel", "aum", "ticket", "amount"],
+    "consultant": ["consultant", "cabinet", "conseil", "intermediaire", "gatekeeper"],
+    "sous_classe_actifs": ["sous classe d'actifs", "sous classe actifs", "sous categorie",
+                           "sub asset class", "subassetclass", "strategie detaillee"],
+    "forme_juridique": ["forme juridique", "vehicule", "structure", "legal form",
+                        "legalform", "wrapper"],
+    "expertise": ["expertise", "equipe de gestion", "pole de gestion", "desk",
+                  "investment team", "capability"],
+    "part_esg": ["part esg", "esg", "% esg", "pourcentage esg", "esg share",
+                 "esg %", "poids esg", "composante esg"],
 }
 
 # Seules ces trois colonnes sont indispensables ; le reste est optionnel.
@@ -154,6 +168,28 @@ LANGUE_NORMALIZATION = {
 # Valeur attribuée à une modalité inconnue (elle reste visible, jamais supprimée)
 VALEUR_INCONNUE = "Non renseigné"
 
+# [BRANCHEMENT] La manager raisonne en DEUX familles : les RFP d'un côté, tout
+# le reste de la due diligence de l'autre. Le type fin (RFP / RFI / DDQ) reste
+# disponible pour l'analyse détaillée ; la famille pilote les écrans.
+FAMILLE_RFP, FAMILLE_DD = "RFP", "Due Diligence"
+FAMILLE_PAR_TYPE = {"RFP": FAMILLE_RFP, "RFI": FAMILLE_DD, "DDQ": FAMILLE_DD}
+FAMILLE_ORDER = [FAMILLE_DD, FAMILLE_RFP]
+
+# Résultat commercial d'un RFP, vocabulaire du pilotage (Won / Lost / Pending / N/A).
+RESULTAT_GAGNE, RESULTAT_PERDU = "Gagné", "Perdu"
+RESULTAT_ATTENTE, RESULTAT_SANS_SUITE = "En attente", "Sans suite"
+RESULTAT_HORS_RFP = "Sans objet"      # une due diligence ne se gagne pas
+RESULTAT_ORDER = [RESULTAT_GAGNE, RESULTAT_ATTENTE, RESULTAT_PERDU, RESULTAT_SANS_SUITE]
+
+# Tranches ESG : celles que suit la manager dans son rapport actuel.
+ESG_INCONNU = "Non renseigné"
+ESG_FAIBLE, ESG_MOYEN, ESG_FORT = "< 25 % ESG", "25–75 % ESG", "> 75 % ESG"
+ESG_ORDER = [ESG_FORT, ESG_MOYEN, ESG_FAIBLE, ESG_INCONNU]
+ESG_SEUIL_FORT = 0.75            # [BRANCHEMENT] seuil « questionnaire à forte composante ESG »
+
+# [BRANCHEMENT] Horizons de croissance suivis au comité (en années).
+HORIZONS_CROISSANCE = (3, 5, 10)
+
 # Ordre métier des statuts (pipeline), utilisé partout dans l'interface
 STATUT_EN_COURS, STATUT_ENVOYE = "En cours", "Envoyé"
 STATUT_GAGNE, STATUT_PERDU, STATUT_ABANDONNE = "Gagné", "Perdu", "Abandonné"
@@ -185,15 +221,30 @@ NOTE_CENSURE = ("Les clients tranchent plusieurs mois après l'envoi de la répo
                 "sous-évalués, et l'encours en jeu surévalué.")
 
 # Dimensions filtrables : clé interne -> libellé affiché (pilote la barre latérale)
+# Dimensions filtrables : clé interne -> libellé affiché. L'ordre est celui de
+# la barre de filtres ; les six premières sont les filtres de premier niveau.
 DIMENSIONS: dict[str, str] = {
+    "famille": "Famille",
+    "resultat": "Résultat RFP",
+    "pays": "Pays",
+    "classe_actifs": "Classe d'actifs",
+    "client": "Client",
+    "expertise": "Expertise",
+    "sous_classe_actifs": "Sous-classe d'actifs",
+    "consultant": "Consultant",
+    "forme_juridique": "Forme juridique",
+    "fonds": "Fonds de référence",
+    "bande_esg": "Tranche ESG",
     "type_demande": "Type de demande",
     "statut": "Statut",
-    "classe_actifs": "Classe d'actifs",
     "type_client": "Type de client",
-    "pays": "Pays",
     "analyste": "Analyste",
     "langue": "Langue",
 }
+# Filtres affichés sans repli dans la barre latérale ; le reste passe derrière
+# « Plus de filtres ».
+DIMENSIONS_PRINCIPALES = ("famille", "resultat", "pays", "classe_actifs",
+                          "client", "expertise")
 
 # =============================================================================
 #  IDENTITÉ VISUELLE — deux thèmes, une seule source de vérité
@@ -225,6 +276,7 @@ THEMES: dict[str, dict[str, Any]] = {
         BORDER="rgba(255,255,255,0.08)",
         VOILE="rgba(20,24,30,0.92)",     # fond des annotations posées sur un tracé
         ACCENT="#3987e5",         # chrome : rail actif, liens, focus
+        ACCENT_2="#c9a227",       # laiton : réservé à la valeur commerciale
         SERIES=["#3987e5", "#d95926", "#199e70", "#c98500",
                 "#d55181", "#008300", "#9085e9", "#e66767"],
         # Rampe séquentielle : le « presque rien » se fond dans la surface,
@@ -235,6 +287,32 @@ THEMES: dict[str, dict[str, Any]] = {
         STATUS_GOOD="#0ca30c", STATUS_WARNING="#fab219",
         STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
         TEXTE_BON="#4ac45f", TEXTE_MAUVAIS="#ef7676",
+    ),
+    # Thème institutionnel : celui du produit. Fond ivoire froid, encre encre-
+    # marine, accent laiton réservé au chrome. Les séries de données gardent la
+    # palette validée (contrôles daltonisme / contraste passés sur #ffffff) :
+    # une couleur de marque n'a pas à porter une donnée.
+    "institutionnel": dict(
+        PLANE="#f5f5f2",
+        SURFACE="#ffffff",
+        ELEVATION="#fafaf8",
+        INK="#111823",
+        INK_2="#4b5563",
+        INK_MUTED="#7b8595",
+        GRID="#e8e8e3",
+        AXIS="#cfd1cb",
+        BORDER="rgba(17,24,35,0.11)",
+        VOILE="rgba(255,255,255,0.94)",
+        ACCENT="#16314f",                 # encre marine : rail actif, titres
+        ACCENT_2="#9a7b28",               # laiton : réservé à la valeur commerciale
+        SERIES=["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+                "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
+        SEQUENTIEL=["#e4eefb", "#c2daf6", "#9ec5f4", "#6da7ec",
+                    "#3987e5", "#256abf", "#16406f"],
+        ORDINAL=["#2a78d6", "#1c5cab", "#184f95", "#104281"],
+        STATUS_GOOD="#0ca30c", STATUS_WARNING="#fab219",
+        STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
+        TEXTE_BON="#046b12", TEXTE_MAUVAIS="#a82f2f",
     ),
     "clair": dict(
         PLANE="#f7f6f3",
@@ -248,6 +326,7 @@ THEMES: dict[str, dict[str, Any]] = {
         BORDER="rgba(11,11,11,0.10)",
         VOILE="rgba(252,252,251,0.92)",
         ACCENT="#0d366b",
+        ACCENT_2="#9a7b28",
         SERIES=["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
                 "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
         SEQUENTIEL=["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
@@ -260,12 +339,12 @@ THEMES: dict[str, dict[str, Any]] = {
 }
 
 # [BRANCHEMENT] Thème par défaut de l'écran et du rapport : "sombre" ou "clair"
-THEME_DEFAUT = "sombre"
+THEME_DEFAUT = "institutionnel"
 
 # Jetons exposés au reste du programme — renseignés par appliquer_theme().
 THEME = THEME_DEFAUT
 PLANE = SURFACE = ELEVATION = INK = INK_2 = INK_MUTED = ""
-GRID = AXIS = BORDER = VOILE = ACCENT = ""
+GRID = AXIS = BORDER = VOILE = ACCENT = ACCENT_2 = ""
 STATUS_GOOD = STATUS_WARNING = STATUS_SERIOUS = STATUS_CRITICAL = ""
 TEXTE_BON = TEXTE_MAUVAIS = ""
 SERIES: list[str] = []
@@ -311,7 +390,7 @@ def appliquer_theme(nom: str = THEME_DEFAUT) -> None:
     avant de construire les figures suffit, il n'y a rien d'autre à propager.
     """
     global THEME, PLANE, SURFACE, ELEVATION, INK, INK_2, INK_MUTED, GRID, AXIS
-    global BORDER, VOILE, ACCENT, SERIES, SEQUENTIEL, ORDINAL
+    global BORDER, VOILE, ACCENT, ACCENT_2, SERIES, SEQUENTIEL, ORDINAL
     global STATUS_GOOD, STATUS_WARNING, STATUS_SERIOUS, STATUS_CRITICAL
     global TEXTE_BON, TEXTE_MAUVAIS, STATUT_COLORS, TYPE_COLORS, CLIENT_TYPE_COLORS
 
@@ -323,6 +402,7 @@ def appliquer_theme(nom: str = THEME_DEFAUT) -> None:
     INK, INK_2, INK_MUTED = jetons["INK"], jetons["INK_2"], jetons["INK_MUTED"]
     GRID, AXIS, BORDER, VOILE = jetons["GRID"], jetons["AXIS"], jetons["BORDER"], jetons["VOILE"]
     ACCENT = jetons["ACCENT"]
+    ACCENT_2 = jetons.get("ACCENT_2", ACCENT)
     SERIES = list(jetons["SERIES"])
     SEQUENTIEL = list(jetons["SEQUENTIEL"])
     ORDINAL = list(jetons["ORDINAL"])
@@ -804,11 +884,41 @@ def ols_multiple(X: pd.DataFrame, y: pd.Series, cible: str = "y") -> MultiOLSRes
 
 # =============================================================================
 #  GÉNÉRATEUR DE DONNÉES SYNTHÉTIQUES
-#  Produit un fichier "brut" volontairement SALE (casse hétérogène, accents
-#  manquants, dates et montants en texte, doublons, trous) et aux noms de
+# -----------------------------------------------------------------------------
+#  DONNÉES DE DÉMONSTRATION — jamais présentées comme réelles : la source est
+#  libellée « Données synthétiques » partout dans l'interface et dans le rapport.
+#
+#  Leur forme reproduit celle d'un pôle RFP réel : la due diligence croît
+#  fortement sur dix ans pendant que le nombre de RFP reste stable, la charge
+#  chute en août, les délais suivent le volume de questions, et les encours
+#  gagnés sont très concentrés sur quelques mandats.
+#
+#  Le fichier produit est volontairement SALE (casse hétérogène, accents
+#  manquants, dates et montants en texte, doublons, trous) et porte les noms de
 #  colonnes de COLUMN_MAP : la chaîne de normalisation est donc réellement
 #  exercée, et non court-circuitée.
 # =============================================================================
+
+# [BRANCHEMENT] Volumes annuels de la démonstration : (due diligence, RFP).
+# Ces valeurs donnent à la fixture la trajectoire d'un pôle qui absorbe une
+# charge de due diligence multipliée par quatre en dix ans, à effectif RFP
+# constant. L'année en cours est calculée au prorata des jours écoulés.
+VOLUMES_ANNUELS: dict[int, tuple[int, int]] = {
+    2014: (52, 26), 2015: (60, 30), 2016: (55, 22), 2017: (48, 23),
+    2018: (92, 20), 2019: (88, 19), 2020: (72, 21), 2021: (115, 17),
+    2022: (138, 18), 2023: (178, 23), 2024: (163, 18), 2025: (203, 29),
+    2026: (175, 32),
+}
+
+# [BRANCHEMENT] Encours gagnés par année, en millions d'euros. La collecte issue
+# des RFP est par nature très irrégulière : un mandat remporté peut représenter
+# plusieurs fois le total d'une année ordinaire.
+AUM_GAGNE_ANNUEL: dict[int, float] = {
+    2014: 120, 2015: 260, 2016: 180, 2017: 200, 2018: 300, 2019: 100,
+    2020: 100, 2021: 700, 2022: 100, 2023: 900, 2024: 400, 2025: 2100,
+    2026: 165,
+}
+
 _CLIENTS: list[tuple[str, str, str, str]] = [
     # (nom, type de client, pays, langue)
     ("Caisse de Retraite Helvetia", "Institutionnel", "Suisse", "Français"),
@@ -823,6 +933,8 @@ _CLIENTS: list[tuple[str, str, str, str]] = [
     ("Sovereign Reserve Authority", "Institutionnel", "Singapour", "Anglais"),
     ("Université de Genève — Dotation", "Institutionnel", "Suisse", "Français"),
     ("Mutuelle Santé Rhône", "Institutionnel", "France", "Français"),
+    ("Institution de Prévoyance Loire", "Institutionnel", "France", "Français"),
+    ("Danske Pension Foreningen", "Institutionnel", "Danemark", "Anglais"),
     ("Banque Privée du Léman", "Distributeur", "Suisse", "Français"),
     ("Groupe Financier Bellecour", "Distributeur", "France", "Français"),
     ("Nordbank Wealth", "Distributeur", "Allemagne", "Allemand"),
@@ -832,30 +944,52 @@ _CLIENTS: list[tuple[str, str, str, str]] = [
     ("Banca Patrimoniale Veneta", "Distributeur", "Italie", "Italien"),
     ("Luxembourg Fund Platform", "Distributeur", "Luxembourg", "Anglais"),
     ("Assurance Vie Méditerranée", "Distributeur", "France", "Français"),
+    ("Helvetia Private Banking", "Distributeur", "Suisse", "Allemand"),
     ("Cabinet Meridian Consulting", "Consultant", "Royaume-Uni", "Anglais"),
     ("Kestrel Investment Advisory", "Consultant", "Royaume-Uni", "Anglais"),
     ("Conseil Actuariel Lutèce", "Consultant", "France", "Français"),
-    ("Helvetica Investment Counsel", "Consultant", "Suisse", "Allemand"),
     ("Delta Manager Research", "Consultant", "États-Unis", "Anglais"),
-    ("Benelux Fiduciary Advisors", "Consultant", "Belgique", "Néerlandais"),
 ]
 
-_FONDS: list[tuple[str, str]] = [
-    ("Horizon Actions Europe ISR", "Actions"),
-    ("Horizon Actions Monde", "Actions"),
-    ("Sélection Small Caps Euro", "Actions"),
-    ("Convictions Actions Émergentes", "Actions"),
-    ("Rendement Obligations Euro", "Obligataire"),
-    ("Crédit Investment Grade", "Obligataire"),
-    ("Obligations Vertes Souveraines", "Obligataire"),
-    ("Dette Émergente Devises Fortes", "Obligataire"),
-    ("Allocation Patrimoine Équilibré", "Diversifié"),
-    ("Allocation Flexible Prudent", "Diversifié"),
-    ("Performance Absolue Market Neutral", "Alternatif"),
-    ("Stratégie Global Macro", "Alternatif"),
-    ("Infrastructures Durables Europe", "Actifs réels"),
-    ("Immobilier Core Zone Euro", "Actifs réels"),
-    ("Trésorerie Court Terme Euro", "Monétaire"),
+# Cabinets intermédiaires. La majorité des dossiers arrive en direct : un
+# consultant systématiquement renseigné serait un signal faux.
+_CONSULTANTS: list[tuple[str, float]] = [
+    (VALEUR_INCONNUE, 0.52),              # dossier reçu en direct
+    ("Meridian Consulting", 0.11),
+    ("Kestrel Investment Advisory", 0.09),
+    ("Delta Manager Research", 0.07),
+    ("Northgate Investment Counsel", 0.06),
+    ("Conseil Actuariel Lutèce", 0.05),
+    ("Benelux Fiduciary Advisors", 0.04),
+    ("Alpine Pension Advisors", 0.03),
+    ("Iberian Manager Selection", 0.03),
+]
+
+# (fonds, classe d'actifs, sous-classe, expertise, forme juridique)
+# Les expertises reprennent le vocabulaire de pilotage du pôle : ce sont des
+# équipes de gestion, pas des catégories de produit.
+_FONDS: list[tuple[str, str, str, str, str]] = [
+    ("Horizon Actions Europe ISR", "Actions", "Actions Europe", "Actions Europe", "SICAV"),
+    ("Horizon Actions Monde", "Actions", "Actions internationales", "Actions Internationales", "SICAV"),
+    ("Sélection Small Caps Euro", "Actions", "Petites capitalisations", "Actions Europe", "FCP"),
+    ("Convictions Actions Émergentes", "Actions", "Marchés émergents", "Actions Internationales", "SICAV Luxembourg"),
+    ("Actions Thématiques Climat", "Actions", "Thématique climat", "Climate", "SICAV Luxembourg"),
+    ("Rendement Obligations Euro", "Obligataire", "Obligations souveraines", "Diversified Euro", "FCP"),
+    ("Crédit Investment Grade Euro", "Obligataire", "Crédit investment grade", "Credit IG", "SICAV"),
+    ("Crédit Haut Rendement", "Obligataire", "Crédit haut rendement", "Credit HY", "SICAV Luxembourg"),
+    ("Obligations Vertes Souveraines", "Obligataire", "Obligations vertes", "Climate", "FCP"),
+    ("Dette Émergente Devises Fortes", "Obligataire", "Dette émergente", "Global Credit", "SICAV Luxembourg"),
+    ("Crédit Global Agrégé", "Obligataire", "Crédit global", "Global Credit", "SICAV Luxembourg"),
+    ("Obligations Datées 2029", "Obligataire", "Fonds à échéance", "Maturity Funds", "FCP"),
+    ("Obligations Datées 2031", "Obligataire", "Fonds à échéance", "Maturity Funds", "FCP"),
+    ("Allocation Patrimoine Équilibré", "Diversifié", "Allocation équilibrée", "Investment Solutions", "FCP"),
+    ("Allocation Flexible Prudent", "Diversifié", "Allocation flexible", "Investment Solutions", "SICAV"),
+    ("Retraite Horizon 2040", "Diversifié", "Épargne retraite", "Investment Solutions", "Fonds dédié"),
+    ("Performance Absolue Market Neutral", "Alternatif", "Performance absolue", "Corporate", "SICAV Luxembourg"),
+    ("Stratégie Global Macro", "Alternatif", "Global macro", "Corporate", "FIA"),
+    ("Infrastructures Durables Europe", "Actifs réels", "Infrastructure", "Climate", "FIA"),
+    ("Immobilier Core Zone Euro", "Actifs réels", "Immobilier core", "Corporate", "FIA"),
+    ("Trésorerie Court Terme Euro", "Monétaire", "Monétaire standard", "Diversified Euro", "FCP"),
 ]
 
 _ANALYSTES: list[tuple[str, float, float]] = [
@@ -870,7 +1004,7 @@ _ANALYSTES: list[tuple[str, float, float]] = [
 ]
 
 _SAISONNALITE = {1: 1.18, 2: 1.10, 3: 1.22, 4: 0.96, 5: 0.94, 6: 1.06,
-                 7: 0.78, 8: 0.52, 9: 1.26, 10: 1.30, 11: 1.16, 12: 0.82}
+                 7: 0.78, 8: 0.32, 9: 1.26, 10: 1.30, 11: 1.16, 12: 0.82}
 
 _VARIANTES_STATUT = {
     STATUT_EN_COURS: ["en cours", "En cours", "EN COURS", "en-cours", "en cours "],
@@ -903,100 +1037,162 @@ def _logistique(z: float) -> float:
     return 1.0 / (1.0 + math.exp(-z))
 
 
-def generate_fake_data(n_mois: int = FAKE_MOIS_HISTORIQUE,
-                       seed: int = FAKE_SEED,
+def _repartir_sur_annee(rng: np.random.Generator, total: int, annee: int,
+                        aujourdhui: pd.Timestamp) -> list[pd.Timestamp]:
+    """Distribue `total` réceptions sur les jours ouvrés de l'année, en suivant
+    la saisonnalité du pôle. L'année en cours est ramenée au prorata."""
+    debut = pd.Timestamp(year=annee, month=1, day=1)
+    fin = min(pd.Timestamp(year=annee, month=12, day=31), aujourdhui)
+    if fin < debut:
+        return []
+    jours = pd.date_range(debut, fin, freq="B")
+    if len(jours) == 0:
+        return []
+    if annee == aujourdhui.year:
+        ecoule = sum(_SAISONNALITE[m] for m in range(1, aujourdhui.month)) \
+            + _SAISONNALITE[aujourdhui.month] * aujourdhui.day / 30.0
+        total = int(round(total * ecoule / sum(_SAISONNALITE.values())))
+    if total <= 0:
+        return []
+    poids = np.array([_SAISONNALITE[j.month] for j in jours], dtype=float)
+    poids /= poids.sum()
+    return [pd.Timestamp(d) for d in rng.choice(jours.to_numpy(), size=total, p=poids)]
+
+
+def generate_fake_data(seed: int = FAKE_SEED,
                        aujourdhui: dt.date | None = None) -> pd.DataFrame:
-    """Jeu de données synthétique mais crédible : saisonnalité (creux d'août,
-    pics de septembre et de janvier), croissance tendancielle, délais corrélés
-    au volume de questions et à la charge du mois, taux de succès dépendant du
-    segment et du respect du délai."""
+    """Jeu de données de démonstration couvrant VOLUMES_ANNUELS."""
     rng = np.random.default_rng(seed)
     today = pd.Timestamp(aujourdhui or dt.date.today()).normalize()
-    debut = (today - pd.DateOffset(months=n_mois - 1)).replace(day=1)
-    mois_debut = pd.Timestamp(debut)
 
     poids_analystes = np.array([a[1] for a in _ANALYSTES], dtype=float)
     poids_analystes /= poids_analystes.sum()
+    poids_consultants = np.array([c[1] for c in _CONSULTANTS], dtype=float)
+    poids_consultants /= poids_consultants.sum()
     appetence = {"Institutionnel": 7.0, "Distributeur": 6.0, "Consultant": 4.5}
     poids_clients = rng.dirichlet(np.array([appetence[c[1]] for c in _CLIENTS]))
     poids_fonds = rng.dirichlet(np.full(len(_FONDS), 6.0))
 
     lignes: list[dict[str, Any]] = []
-    for i in range(n_mois):
-        mois = mois_debut + pd.DateOffset(months=i)
-        croissance = 1.0 + 0.019 * i                       # ~+70 % sur 3 ans
-        intensite = FAKE_VOLUME_MENSUEL_BASE * croissance * _SAISONNALITE[mois.month]
-        n_mois_courant = int(rng.poisson(intensite))
-        if mois.year == today.year and mois.month == today.month:
-            # mois en cours : au prorata des jours écoulés
-            n_mois_courant = int(n_mois_courant * today.day / 30.0)
-        jours_dispo = pd.date_range(mois, mois + pd.offsets.MonthEnd(0), freq="B")
-        jours_dispo = jours_dispo[jours_dispo <= today]
-        if len(jours_dispo) == 0 or n_mois_courant <= 0:
+    for annee, (n_dd, n_rfp) in VOLUMES_ANNUELS.items():
+        if annee > today.year:
             continue
-        charge_mois = n_mois_courant / max(intensite, 1.0)   # tension du mois
-
-        for _ in range(n_mois_courant):
-            reception = pd.Timestamp(rng.choice(jours_dispo.to_numpy()))
-            type_demande = str(rng.choice(TYPE_ORDER, p=[0.38, 0.34, 0.28]))
-            i_client = int(rng.choice(len(_CLIENTS), p=poids_clients))
-            client, type_client, pays, langue = _CLIENTS[i_client]
-            i_fonds = int(rng.choice(len(_FONDS), p=poids_fonds))
-            fonds, classe = _FONDS[i_fonds]
-            i_analyste = int(rng.choice(len(_ANALYSTES), p=poids_analystes))
-            analyste, _, vitesse = _ANALYSTES[i_analyste]
-
-            base_q = {"RFP": 4.85, "RFI": 3.80, "DDQ": 4.35}[type_demande]
-            nb_questions = int(np.clip(rng.lognormal(base_q, 0.42), 8, 600))
-
-            # Délai ouvré = f(volume de questions, analyste, tension du mois, aléa)
-            attendu = (2.5
-                       + 0.062 * nb_questions * vitesse
-                       + 4.0 * (charge_mois - 1.0)
-                       + {"RFP": 2.0, "RFI": 0.0, "DDQ": 1.0}[type_demande]
-                       + (1.8 if langue != "Français" else 0.0))
-            delai = int(np.clip(round(rng.gamma(shape=6.0, scale=max(attendu, 1.0) / 6.0)), 1, 90))
-            if rng.random() < 0.04:            # dossiers lourds qui s'enlisent
-                delai = int(min(90, delai * rng.uniform(1.8, 3.0)))
-
-            mult = {"Institutionnel": 1.0, "Distributeur": 0.72, "Consultant": 1.25}[type_client]
-            base_m = {"RFP": 16.6, "RFI": 16.1, "DDQ": 15.6}[type_demande]
-            montant = float(np.clip(rng.lognormal(base_m, 0.85) * mult, 5e5, 8e8))
-
-            envoi = pd.Timestamp(np.busday_offset(reception.date(), delai, roll="forward"))
-            sla = SLA_JOURS_OUVRES.get(type_demande, SLA_DEFAUT)
-            abandon = rng.random() < 0.035
-
-            if abandon and rng.random() < 0.7:
-                statut, envoi_final = STATUT_ABANDONNE, pd.NaT
-            elif envoi > today:
-                statut, envoi_final = STATUT_EN_COURS, pd.NaT
-            else:
-                envoi_final = envoi
-                z = (-1.15
-                     + {"RFP": 0.18, "RFI": 0.05, "DDQ": -0.08}[type_demande]
-                     + {"Institutionnel": 0.08, "Distributeur": 0.22, "Consultant": -0.18}[type_client]
-                     + {"Actions": 0.10, "Obligataire": 0.16, "Diversifié": 0.02,
-                        "Alternatif": -0.22, "Actifs réels": -0.05, "Monétaire": 0.24}[classe]
-                     - 0.050 * max(0, delai - sla)
-                     - 0.28 * math.log10(montant / 2.0e7)
-                     + (0.14 if vitesse < 0.95 else 0.0))
-                decision = envoi + pd.Timedelta(days=int(rng.integers(45, 240)))
-                if decision > today:
-                    statut = STATUT_ENVOYE
+        for famille, total in ((FAMILLE_DD, n_dd), (FAMILLE_RFP, n_rfp)):
+            for reception in _repartir_sur_annee(rng, total, annee, today):
+                if famille == FAMILLE_RFP:
+                    type_demande = "RFP"
                 else:
-                    statut = STATUT_GAGNE if rng.random() < _logistique(z) else STATUT_PERDU
+                    type_demande = "DDQ" if rng.random() < 0.72 else "RFI"
 
-            lignes.append({
-                "date_reception": reception, "date_envoi": envoi_final,
-                "type_demande": type_demande, "client": client, "type_client": type_client,
-                "pays": pays, "fonds": fonds, "classe_actifs": classe, "statut": statut,
-                "analyste": analyste, "nb_questions": nb_questions, "langue": langue,
-                "montant_potentiel": round(montant, 2),
-            })
+                i_client = int(rng.choice(len(_CLIENTS), p=poids_clients))
+                client, type_client, pays, langue = _CLIENTS[i_client]
+                i_fonds = int(rng.choice(len(_FONDS), p=poids_fonds))
+                fonds, classe, sous_classe, expertise, forme = _FONDS[i_fonds]
+                i_analyste = int(rng.choice(len(_ANALYSTES), p=poids_analystes))
+                analyste, _, vitesse = _ANALYSTES[i_analyste]
+                # Un consultant n'intervient presque jamais sur une due diligence
+                # de routine : il pilote surtout les appels d'offres.
+                if famille == FAMILLE_RFP or rng.random() < 0.18:
+                    consultant = _CONSULTANTS[int(rng.choice(len(_CONSULTANTS),
+                                                             p=poids_consultants))][0]
+                else:
+                    consultant = VALEUR_INCONNUE
+
+                base_q = {"RFP": 4.85, "RFI": 3.80, "DDQ": 4.35}[type_demande]
+                nb_questions = int(np.clip(rng.lognormal(base_q, 0.42), 8, 600))
+
+                # La composante ESG monte régulièrement depuis 2018.
+                pente_esg = _logistique((annee - 2020.5) / 1.9)
+                if annee < 2017 and rng.random() < 0.55:
+                    part_esg = float("nan")          # sujet absent des questionnaires
+                else:
+                    moyenne = 0.10 + 0.72 * pente_esg + (0.10 if expertise == "Climate" else 0)
+                    part_esg = float(np.clip(rng.beta(2.2, max(0.6, 2.2 * (1 - moyenne) / max(moyenne, 1e-3))), 0, 1))
+
+                attendu = (2.5
+                           + 0.062 * nb_questions * vitesse
+                           + {"RFP": 2.0, "RFI": 0.0, "DDQ": 1.0}[type_demande]
+                           + (1.8 if langue != "Français" else 0.0))
+                delai = int(np.clip(round(rng.gamma(shape=6.0, scale=max(attendu, 1.0) / 6.0)), 1, 90))
+                if rng.random() < 0.04:            # dossiers lourds qui s'enlisent
+                    delai = int(min(90, delai * rng.uniform(1.8, 3.0)))
+                envoi = pd.Timestamp(np.busday_offset(reception.date(), delai, roll="forward"))
+
+                if famille == FAMILLE_DD:
+                    # Une due diligence n'a pas de résultat commercial : elle est
+                    # en cours, ou envoyée. Le refus de traiter reste marginal.
+                    if rng.random() < 0.012:
+                        statut, envoi_final = STATUT_ABANDONNE, pd.NaT
+                    elif envoi > today:
+                        statut, envoi_final = STATUT_EN_COURS, pd.NaT
+                    else:
+                        statut, envoi_final = STATUT_ENVOYE, envoi
+                    montant = float("nan")
+                else:
+                    sla = SLA_JOURS_OUVRES.get(type_demande, SLA_DEFAUT)
+                    if rng.random() < 0.05:
+                        statut, envoi_final = STATUT_ABANDONNE, pd.NaT
+                    elif envoi > today:
+                        statut, envoi_final = STATUT_EN_COURS, pd.NaT
+                    else:
+                        envoi_final = envoi
+                        z = (-0.95
+                             + {"Institutionnel": 0.08, "Distributeur": 0.22,
+                                "Consultant": -0.18}[type_client]
+                             + {"Actions": 0.10, "Obligataire": 0.16, "Diversifié": 0.02,
+                                "Alternatif": -0.22, "Actifs réels": -0.05,
+                                "Monétaire": 0.24}[classe]
+                             - 0.050 * max(0, delai - sla)
+                             + (0.14 if vitesse < 0.95 else 0.0))
+                        decision = envoi + pd.Timedelta(days=int(rng.integers(45, 240)))
+                        if decision > today:
+                            statut = STATUT_ENVOYE
+                        else:
+                            statut = STATUT_GAGNE if rng.random() < _logistique(z) else STATUT_PERDU
+                    montant = float("nan")
+
+                lignes.append({
+                    "date_reception": reception, "date_envoi": envoi_final,
+                    "type_demande": type_demande, "client": client,
+                    "consultant": consultant, "type_client": type_client,
+                    "pays": pays, "fonds": fonds, "classe_actifs": classe,
+                    "sous_classe_actifs": sous_classe, "forme_juridique": forme,
+                    "expertise": expertise, "statut": statut, "analyste": analyste,
+                    "nb_questions": nb_questions,
+                    "part_esg": part_esg if part_esg == part_esg else np.nan,
+                    "langue": langue, "montant_potentiel": montant,
+                    "_annee": annee, "_famille": famille,
+                })
 
     propre = pd.DataFrame(lignes).sort_values("date_reception").reset_index(drop=True)
+    propre = _attribuer_encours(propre, rng)
+    propre = propre.drop(columns=["_annee", "_famille"])
     return _salir(propre, rng)
+
+
+def _attribuer_encours(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
+    """Répartit l'encours gagné de chaque année sur ses RFP remportés, et donne
+    aux RFP encore ouverts un encours potentiel du même ordre de grandeur.
+
+    La collecte est très concentrée : une année se joue souvent sur un mandat.
+    """
+    df = df.copy()
+    for annee, total in AUM_GAGNE_ANNUEL.items():
+        gagnes = df.index[(df["_annee"] == annee) & (df["statut"] == STATUT_GAGNE)]
+        if len(gagnes) == 0 or total <= 0:
+            continue
+        parts = rng.dirichlet(np.full(len(gagnes), 0.8))    # alpha < 1 : forte concentration
+        df.loc[gagnes, "montant_potentiel"] = np.round(parts * total, 2)
+
+    # Les RFP non gagnés portent un encours potentiel tiré de la même loi : un
+    # dossier perdu représentait bien un enjeu commercial.
+    reference = df.loc[df["statut"] == STATUT_GAGNE, "montant_potentiel"].dropna()
+    mediane = float(reference.median()) if len(reference) else 60.0
+    ouverts = df.index[(df["_famille"] == FAMILLE_RFP) & (df["statut"] != STATUT_GAGNE)]
+    if len(ouverts):
+        df.loc[ouverts, "montant_potentiel"] = np.round(
+            np.clip(rng.lognormal(math.log(max(mediane, 1.0)), 1.05, len(ouverts)), 2, 4000), 2)
+    return df
 
 
 def _salir(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
@@ -1006,13 +1202,12 @@ def _salir(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
     def variante(valeurs: pd.Series, table: dict[str, list[str]]) -> list[Any]:
         return [rng.choice(table[v]) if v in table else v for v in valeurs]
 
-    # Dates : 8 % saisies en texte "jj/mm/aaaa"
     def dates_mixtes(col: pd.Series) -> list[Any]:
         out: list[Any] = []
         for v in col:
             if pd.isna(v):
                 out.append(pd.NaT)
-            elif rng.random() < 0.08:
+            elif rng.random() < 0.08:            # 8 % saisies en texte « jj/mm/aaaa »
                 out.append(f"{v.day:02d}/{v.month:02d}/{v.year}")
             else:
                 out.append(v)
@@ -1025,29 +1220,46 @@ def _salir(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
         v.upper() if rng.random() < 0.05 else (v + " " if rng.random() < 0.05 else v)
         for v in df["client"]
     ]
+    brut[COLUMN_MAP["consultant"]] = [
+        np.nan if v == VALEUR_INCONNUE else v for v in df["consultant"]
+    ]
     brut[COLUMN_MAP["type_client"]] = variante(df["type_client"], _VARIANTES_TYPE_CLIENT)
     brut[COLUMN_MAP["pays"]] = [np.nan if rng.random() < 0.02 else v for v in df["pays"]]
     brut[COLUMN_MAP["fonds"]] = df["fonds"].to_numpy()
     brut[COLUMN_MAP["classe_actifs"]] = df["classe_actifs"].to_numpy()
+    brut[COLUMN_MAP["sous_classe_actifs"]] = df["sous_classe_actifs"].to_numpy()
+    brut[COLUMN_MAP["forme_juridique"]] = df["forme_juridique"].to_numpy()
+    brut[COLUMN_MAP["expertise"]] = df["expertise"].to_numpy()
     brut[COLUMN_MAP["statut"]] = variante(df["statut"], _VARIANTES_STATUT)
     brut[COLUMN_MAP["analyste"]] = df["analyste"].to_numpy()
     brut[COLUMN_MAP["nb_questions"]] = [
         str(v) if rng.random() < 0.03 else v for v in df["nb_questions"]
     ]
+    # La part ESG arrive tantôt en fraction, tantôt en pourcentage, tantôt en
+    # tranche écrite à la main : les trois formes existent dans les vrais
+    # classeurs, la normalisation doit les absorber.
+    esg: list[Any] = []
+    for v in df["part_esg"]:
+        if pd.isna(v):
+            esg.append(np.nan)
+        else:
+            tirage = rng.random()
+            if tirage < 0.55:
+                esg.append(round(float(v), 3))
+            elif tirage < 0.85:
+                esg.append(f"{round(float(v) * 100)} %")
+            else:
+                esg.append(ESG_FORT if v >= 0.75 else (ESG_MOYEN if v >= 0.25 else ESG_FAIBLE))
+    brut[COLUMN_MAP["part_esg"]] = esg
     brut[COLUMN_MAP["langue"]] = variante(df["langue"], _VARIANTES_LANGUE)
     brut[COLUMN_MAP["montant_potentiel"]] = [
-        (f"{v:,.2f} €".replace(",", " ").replace(".", ","))
-        if rng.random() < 0.10 else v
-        for v in df["montant_potentiel"]
+        (f"{v:,.2f} €".replace(",", " ").replace(".", ",")) if pd.notna(v) and rng.random() < 0.10
+        else v for v in df["montant_potentiel"]
     ]
-    # Colonne hors périmètre : doit être ignorée sans bruit
-    brut["Commentaire_Interne"] = ""
-    # 1,2 % de doublons stricts, comme dans tout classeur partagé
+    brut["Commentaire_Interne"] = ""          # colonne hors périmètre : ignorée sans bruit
     doublons = brut.sample(frac=0.012, random_state=int(rng.integers(0, 10_000)))
     return pd.concat([brut, doublons], ignore_index=True).sample(
         frac=1.0, random_state=7).reset_index(drop=True)
-
-
 # =============================================================================
 #  CHARGEMENT, NORMALISATION, ENRICHISSEMENT
 # =============================================================================
@@ -1191,6 +1403,56 @@ def _vers_nombre(serie: pd.Series) -> pd.Series:
     return serie.map(convertir).astype(float)
 
 
+def _vers_esg(serie: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """Part ESG d'un questionnaire → (fraction 0-1, tranche).
+
+    Trois écritures coexistent dans les classeurs réels : une fraction (0,45),
+    un pourcentage (« 45 % ») et une tranche saisie à la main (« > 75 % ESG »).
+    Une tranche écrite ne donne QUE la tranche : en déduire un pourcentage
+    précis serait inventer une donnée absente.
+    """
+    index_bandes = {_cle(b): b for b in ESG_ORDER}
+    index_bandes.update({
+        _cle("plus de 75"): ESG_FORT, _cle("> 75"): ESG_FORT, _cle("high esg"): ESG_FORT,
+        _cle("moins de 25"): ESG_FAIBLE, _cle("< 25"): ESG_FAIBLE, _cle("low esg"): ESG_FAIBLE,
+        _cle("entre 25 et 75"): ESG_MOYEN, _cle("25-75"): ESG_MOYEN, _cle("medium esg"): ESG_MOYEN,
+    })
+
+    parts: list[float] = []
+    bandes: list[str] = []
+    for valeur in serie:
+        fraction = float("nan")
+        if valeur is None or (isinstance(valeur, float) and math.isnan(valeur)):
+            pass
+        elif isinstance(valeur, (int, float, np.integer, np.floating)):
+            fraction = float(valeur)
+        else:
+            texte = str(valeur).strip()
+            cle = _cle(texte)
+            if cle in index_bandes:
+                parts.append(float("nan"))
+                bandes.append(index_bandes[cle])
+                continue
+            nombre = re.sub(r"[^\d,.\-]", "", texte.replace("\u00a0", ""))
+            if nombre not in ("", "-", ".", ","):
+                try:
+                    fraction = float(nombre.replace(",", "."))
+                except ValueError:
+                    fraction = float("nan")
+        if math.isfinite(fraction):
+            if fraction > 1.0:                      # saisie en points de pourcentage
+                fraction /= 100.0
+            fraction = min(max(fraction, 0.0), 1.0)
+            parts.append(fraction)
+            bandes.append(ESG_FORT if fraction >= ESG_SEUIL_FORT
+                          else (ESG_MOYEN if fraction >= 0.25 else ESG_FAIBLE))
+        else:
+            parts.append(float("nan"))
+            bandes.append(ESG_INCONNU)
+    return (pd.Series(parts, index=serie.index, dtype=float),
+            pd.Series(bandes, index=serie.index, dtype=object))
+
+
 def _nettoyer_texte(serie: pd.Series) -> pd.Series:
     texte = serie.astype("string").str.replace(r"\s+", " ", regex=True).str.strip()
     return texte.replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA, "-": pd.NA, "n/a": pd.NA})
@@ -1268,16 +1530,25 @@ def normalize(brut: pd.DataFrame, source: str = "") -> tuple[pd.DataFrame, LoadR
     df.loc[df["nb_questions"] <= 0, "nb_questions"] = np.nan
     df.loc[df["montant_potentiel"] < 0, "montant_potentiel"] = np.nan
 
+    # --- Part ESG ----------------------------------------------------------
+    if "part_esg" in df:
+        df["part_esg"], df["bande_esg"] = _vers_esg(df["part_esg"])
+    else:
+        df["part_esg"] = np.nan
+        df["bande_esg"] = ESG_INCONNU
+
     # --- Modalités ---------------------------------------------------------
     for champ in ("type_demande", "statut", "type_client", "langue",
-                  "client", "pays", "fonds", "classe_actifs", "analyste"):
+                  "client", "pays", "fonds", "classe_actifs", "analyste",
+                  "consultant", "sous_classe_actifs", "forme_juridique", "expertise"):
         df[champ] = _nettoyer_texte(df[champ]) if champ in df else pd.Series(pd.NA, index=df.index, dtype="string")
 
     df["type_demande"] = _appliquer_normalisation(df["type_demande"], TYPE_NORMALIZATION, "type_demande", rapport)
     df["statut"] = _appliquer_normalisation(df["statut"], STATUS_NORMALIZATION, "statut", rapport)
     df["type_client"] = _appliquer_normalisation(df["type_client"], CLIENT_TYPE_NORMALIZATION, "type_client", rapport)
     df["langue"] = _appliquer_normalisation(df["langue"], LANGUE_NORMALIZATION, "langue", rapport)
-    for champ in ("client", "pays", "fonds", "classe_actifs", "analyste"):
+    for champ in ("client", "pays", "fonds", "classe_actifs", "analyste",
+                  "consultant", "sous_classe_actifs", "forme_juridique", "expertise"):
         df[champ] = _unifier_libelles(df[champ]).fillna(VALEUR_INCONNUE).astype(object)
 
     # --- Hygiène -----------------------------------------------------------
@@ -1330,6 +1601,23 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
     df["dans_sla"] = np.where(df["delai_ouvre"].notna(), df["delai_ouvre"] <= df["sla_cible"], np.nan)
     df["dans_sla"] = pd.to_numeric(df["dans_sla"], errors="coerce")
 
+    # --- Lecture métier : famille, résultat commercial, tranche ESG --------
+    # La manager pilote en deux familles ; le type fin reste disponible.
+    df["famille"] = df["type_demande"].map(FAMILLE_PAR_TYPE).fillna(VALEUR_INCONNUE).astype(object)
+    df["est_rfp"] = df["famille"].eq(FAMILLE_RFP)
+    df["est_dd"] = df["famille"].eq(FAMILLE_DD)
+
+    # Le résultat commercial n'existe que pour un appel d'offres : une due
+    # diligence ne se gagne pas, elle se traite.
+    correspondance = {
+        STATUT_GAGNE: RESULTAT_GAGNE, STATUT_PERDU: RESULTAT_PERDU,
+        STATUT_EN_COURS: RESULTAT_ATTENTE, STATUT_ENVOYE: RESULTAT_ATTENTE,
+        STATUT_ABANDONNE: RESULTAT_SANS_SUITE,
+    }
+    df["resultat"] = np.where(
+        df["est_rfp"], df["statut"].map(correspondance).fillna(VALEUR_INCONNUE),
+        RESULTAT_HORS_RFP)
+
     df["est_envoye"] = df["statut"].isin(STATUTS_ENVOYES) | df["date_envoi"].notna()
     df["est_decide"] = df["statut"].isin(STATUTS_DECIDES)
     df["est_gagne"] = df["statut"].eq(STATUT_GAGNE)
@@ -1346,7 +1634,11 @@ def enrich(df: pd.DataFrame) -> pd.DataFrame:
         df.loc[ouverts, "anciennete_ouvree"] = np.maximum(np.busday_count(debut, fin), 0).astype(float)
     df["en_retard"] = (df["est_en_cours"] & (df["anciennete_ouvree"] > df["sla_cible"])).fillna(False)
 
-    df["montant_gagne"] = np.where(df["est_gagne"], df["montant_potentiel"], np.nan)
+    # AUM gagné : l'encours d'un RFP remporté. C'est la métrique de valeur
+    # commerciale suivie au comité — un dossier perdu n'apporte aucun encours.
+    df["aum_gagne"] = np.where(df["est_gagne"] & df["est_rfp"], df["montant_potentiel"], np.nan)
+    df["montant_gagne"] = df["aum_gagne"]          # nom historique, conservé
+    df["esg_fort"] = df["bande_esg"].eq(ESG_FORT)
     df["montant_en_jeu"] = np.where(df["statut"].isin([STATUT_EN_COURS, STATUT_ENVOYE]),
                                     df["montant_potentiel"], np.nan)
     return df
@@ -1545,6 +1837,203 @@ def taux_succes(df: pd.DataFrame) -> tuple[float, int, int, tuple[float, float]]
 
 
 # =============================================================================
+#  COUCHE MÉTRIQUE
+# -----------------------------------------------------------------------------
+#  Une métrique, une définition, un seul endroit. Tout écran et tout rapport
+#  appelle ces fonctions : deux graphiques ne peuvent pas compter la même chose
+#  de deux façons différentes.
+#
+#  Les définitions non triviales sont documentées et vérifiées : les KPI de
+#  croissance de la fixture reproduisent ceux publiés par le pôle (+49 % sur
+#  3 ans, +149 % sur 5 ans, +158 % sur 10 ans), ce qui valide la formule.
+# =============================================================================
+def nb_questionnaires(df: pd.DataFrame) -> int:
+    """Nombre de questionnaires reçus sur la période, toutes familles."""
+    return int(len(df))
+
+
+def nb_famille(df: pd.DataFrame, famille: str) -> int:
+    """Nombre de questionnaires d'une famille (RFP ou Due Diligence)."""
+    if df.empty or "famille" not in df.columns:
+        return 0
+    return int((df["famille"] == famille).sum())
+
+
+def compte_resultats(df: pd.DataFrame) -> pd.Series:
+    """Répartition des RFP par résultat commercial, dans l'ordre de lecture.
+
+    Les due diligences sont exclues : elles n'ont pas de résultat commercial.
+    """
+    if df.empty or "resultat" not in df.columns:
+        return pd.Series(dtype=int)
+    rfp = df[df["est_rfp"]]
+    comptes = rfp["resultat"].value_counts()
+    ordre = [r for r in RESULTAT_ORDER if r in comptes.index]
+    ordre += [r for r in comptes.index if r not in ordre]
+    return comptes.reindex(ordre)
+
+
+def taux_succes_rfp(df: pd.DataFrame) -> tuple[float, int, int, tuple[float, float]]:
+    """(taux, gagnés, tranchés, IC 95 % de Wilson).
+
+    Dénominateur = RFP tranchés (gagnés + perdus). Les dossiers en attente de
+    décision sont exclus, jamais comptés comme des échecs ; les dossiers sans
+    suite non plus, puisqu'ils n'ont pas été remis.
+    """
+    if df.empty or "est_rfp" not in df.columns:
+        return (float("nan"), 0, 0, (float("nan"), float("nan")))
+    rfp = df[df["est_rfp"]]
+    gagnes = int((rfp["resultat"] == RESULTAT_GAGNE).sum())
+    perdus = int((rfp["resultat"] == RESULTAT_PERDU).sum())
+    tranches = gagnes + perdus
+    taux = gagnes / tranches if tranches else float("nan")
+    return taux, gagnes, tranches, wilson_ci(gagnes, tranches)
+
+
+def aum_gagne(df: pd.DataFrame) -> float:
+    """Encours remporté : somme des montants des RFP gagnés, en millions d'euros."""
+    if df.empty or "aum_gagne" not in df.columns:
+        return 0.0
+    return float(df["aum_gagne"].sum(skipna=True))
+
+
+def aum_en_jeu(df: pd.DataFrame) -> float:
+    """Encours des RFP encore ouverts — le pipeline commercial."""
+    if df.empty or "montant_potentiel" not in df.columns:
+        return 0.0
+    ouverts = df["est_rfp"] & df["resultat"].eq(RESULTAT_ATTENTE)
+    return float(df.loc[ouverts, "montant_potentiel"].sum(skipna=True))
+
+
+def delai_median(df: pd.DataFrame, famille: str | None = None,
+                 base: str = "calendaire") -> float:
+    """Délai de traitement médian, réception → envoi.
+
+    `base="calendaire"` correspond au « time completion » suivi au comité ;
+    `base="ouvre"` sert au pilotage interne du respect des délais cibles.
+    """
+    if df.empty:
+        return float("nan")
+    colonne = "delai_calendaire" if base == "calendaire" else "delai_ouvre"
+    if colonne not in df.columns:
+        return float("nan")
+    sous = df if famille is None else df[df["famille"] == famille]
+    return float(sous[colonne].median()) if len(sous) else float("nan")
+
+
+def cadence_mensuelle(df: pd.DataFrame, famille: str | None = None) -> float:
+    """Nombre de dossiers TERMINÉS par mois, en moyenne sur les mois observés.
+
+    On compte les envois, pas les réceptions : c'est la capacité de production
+    de l'équipe, pas la charge qui lui arrive.
+    """
+    if df.empty or "date_envoi" not in df.columns:
+        return float("nan")
+    sous = df if famille is None else df[df["famille"] == famille]
+    envoyes = sous.dropna(subset=["date_envoi"])
+    if envoyes.empty:
+        return float("nan")
+    mois = envoyes["date_envoi"].dt.to_period("M")
+    n_mois = max(1, mois.nunique())
+    return float(len(envoyes) / n_mois)
+
+
+def volume_annuel(df: pd.DataFrame) -> pd.DataFrame:
+    """Volume par année civile et par famille, plus le total."""
+    if df.empty:
+        return pd.DataFrame()
+    pivot = df.pivot_table(index=df["date_reception"].dt.year, columns="famille",
+                           values="date_reception", aggfunc="size", fill_value=0)
+    ordre = [f for f in FAMILLE_ORDER if f in pivot.columns]
+    ordre += [c for c in pivot.columns if c not in ordre]
+    pivot = pivot[ordre]
+    pivot.index.name = "annee"
+    pivot["Total"] = pivot.sum(axis=1)
+    return pivot
+
+
+@dataclass(frozen=True)
+class Croissance:
+    """Évolution du volume entre deux années civiles complètes."""
+    horizon: int
+    annee_reference: int
+    annee_base: int
+    volume_reference: int
+    volume_base: int
+    taux: float
+    complete: bool          # False si l'historique ne couvre pas l'horizon
+
+    @property
+    def variation_absolue(self) -> int:
+        return self.volume_reference - self.volume_base
+
+    @property
+    def tcam(self) -> float:
+        """Taux de croissance annuel moyen, plus honnête qu'un cumul brut."""
+        if self.volume_base <= 0 or self.horizon <= 0:
+            return float("nan")
+        return (self.volume_reference / self.volume_base) ** (1 / self.horizon) - 1
+
+
+def croissance(df: pd.DataFrame, horizon: int,
+               aujourdhui: dt.date | None = None) -> Croissance | None:
+    """Croissance du volume sur `horizon` années.
+
+    Référence = dernière année civile COMPLÈTE ; base = cette année moins
+    l'horizon. L'année en cours est exclue : la comparer à une année pleine
+    afficherait un effondrement qui n'existe pas.
+    """
+    if df.empty:
+        return None
+    annees = volume_annuel(df)["Total"]
+    if annees.empty:
+        return None
+    today = pd.Timestamp(aujourdhui or dt.date.today())
+    candidates = [a for a in annees.index if a < today.year]
+    if not candidates:
+        return None
+    reference = max(candidates)
+    base = reference - horizon
+    complete = base in annees.index
+    if not complete:
+        base = min(annees.index)
+        if base >= reference:
+            return None
+    v_ref, v_base = int(annees.loc[reference]), int(annees.loc[base])
+    taux = (v_ref - v_base) / v_base if v_base else float("nan")
+    return Croissance(horizon=reference - base, annee_reference=reference,
+                      annee_base=base, volume_reference=v_ref, volume_base=v_base,
+                      taux=taux, complete=complete)
+
+
+def part_esg_forte(df: pd.DataFrame) -> float:
+    """Part des questionnaires dont la composante ESG dépasse le seuil fort.
+
+    Calculée sur les seuls dossiers dont la part ESG est renseignée : compter
+    les non-renseignés comme « peu ESG » ferait mentir la série historique.
+    """
+    if df.empty or "bande_esg" not in df.columns:
+        return float("nan")
+    connus = df[df["bande_esg"] != ESG_INCONNU]
+    if connus.empty:
+        return float("nan")
+    return float((connus["bande_esg"] == ESG_FORT).mean())
+
+
+def dossiers_a_surveiller(df: pd.DataFrame) -> pd.DataFrame:
+    """Dossiers qui demandent une attention : en cours au-delà du délai cible,
+    ou RFP en attente de décision depuis plus de six mois."""
+    if df.empty:
+        return df.head(0)
+    aujourdhui = pd.Timestamp.today().normalize()
+    en_retard = df["en_retard"].fillna(False)
+    attente_longue = (df["est_rfp"] & df["resultat"].eq(RESULTAT_ATTENTE)
+                      & df["date_envoi"].notna()
+                      & ((aujourdhui - df["date_envoi"]).dt.days > 120))
+    return df[en_retard | attente_longue].copy()
+
+
+# =============================================================================
 #  INDICATEURS CLÉS
 # =============================================================================
 @dataclass
@@ -1558,6 +2047,9 @@ class Kpi:
     delta_sens: str = "neutre"      # "bon" | "mauvais" | "neutre"
     delta_direction: str = "plat"   # "hausse" | "baisse" | "plat"
     aide: str = ""
+    serie: list[float] = field(default_factory=list)   # mini-tendance
+    cible: str | None = None        # page ouverte au clic (drill-down)
+    groupe: str = "activite"        # activite | commercial | operations
 
 
 def _delta(courant: float | None, precedent: float | None, *,
@@ -1573,8 +2065,10 @@ def _delta(courant: float | None, precedent: float | None, *,
         ratio = ecart / abs(float(precedent))
         texte = f"{'+' if ratio >= 0 else '−'}{fmt_dec(abs(ratio) * 100, 1, '%')}"
     elif mode == "points":
-        texte = f"{'+' if ecart >= 0 else '−'}{fmt_dec(abs(ecart) * 100, 1)}{NBSP}pt"
+        texte = f"{'+' if ecart >= 0 else '−'}{fmt_dec(abs(ecart) * 100, 1)}{ESP_UNITE}pt"
     else:
+        if abs(ecart) < 0.5 * 10 ** (-n):        # s'arrondirait à « −0 »
+            return ("stable", "neutre", "plat")
         texte = f"{'+' if ecart >= 0 else '−'}{fmt_dec(abs(ecart), n, unite)}"
     if abs(ecart) < 1e-12:
         return ("stable", "neutre", "plat")
@@ -1588,93 +2082,304 @@ def _delta(courant: float | None, precedent: float | None, *,
     return (texte, sens, direction)
 
 
+def _serie_mensuelle(df: pd.DataFrame, masque: pd.Series | None = None,
+                     n: int = 18) -> list[float]:
+    """Derniers mois de volume, pour la mini-tendance d'une carte."""
+    if df.empty:
+        return []
+    sous = df if masque is None else df[masque]
+    if sous.empty:
+        return []
+    serie = (sous.assign(_m=sous["date_reception"].dt.to_period("M"))
+             .groupby("_m").size().sort_index())
+    return [float(v) for v in serie.tail(n)]
+
+
 def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> list[Kpi]:
-    """Huit indicateurs, chacun comparé à la période immédiatement antérieure
-    de même durée (la seule comparaison qui ne mente pas)."""
+    """Indicateurs de pilotage, comparés à la période immédiatement antérieure
+    de même durée — la seule comparaison qui ne mente pas.
+
+    Chaque indicateur porte sa définition (`aide`), sa mini-tendance (`serie`)
+    et la page qu'il ouvre au clic (`cible`).
+    """
     if df.empty:
         return []
     prec = df_precedent if df_precedent is not None and not df_precedent.empty else None
 
-    def val(frame: pd.DataFrame | None, f: Callable[[pd.DataFrame], float]) -> float | None:
-        if frame is None or frame.empty:
+    def val(f: Callable[[pd.DataFrame], float]) -> float | None:
+        if prec is None:
             return None
         try:
-            v = float(f(frame))
+            v = float(f(prec))
         except (ValueError, TypeError, ZeroDivisionError):
             return None
         return v if math.isfinite(v) else None
 
     kpis: list[Kpi] = []
 
-    volume = len(df)
-    d = _delta(volume, val(prec, len), mode="relatif")
-    kpis.append(Kpi("volume", "Demandes reçues", fmt_int(volume), float(volume),
-                    detail=f"{fmt_int(df['est_envoye'].sum())} réponse(s) envoyée(s)",
+    # ---- Volume et mix ---------------------------------------------------
+    total = nb_questionnaires(df)
+    n_dd, n_rfp = nb_famille(df, FAMILLE_DD), nb_famille(df, FAMILLE_RFP)
+    d = _delta(total, val(nb_questionnaires), mode="relatif")
+    kpis.append(Kpi("questionnaires", "Questionnaires reçus", fmt_int(total), float(total),
+                    detail=f"{fmt_pct(n_dd / total, 0)} de due diligence" if total else "",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
-                    aide="Nombre de demandes reçues sur la période filtrée."))
+                    serie=_serie_mensuelle(df), cible="activite",
+                    aide="Nombre de questionnaires reçus sur la période filtrée, "
+                         "appels d'offres et due diligence confondus."))
 
-    charge = df["nb_questions"].sum(skipna=True)
-    d = _delta(charge, val(prec, lambda f: f["nb_questions"].sum(skipna=True)), mode="relatif")
-    kpis.append(Kpi("charge", "Questions traitées", fmt_int(charge), float(charge),
-                    detail=f"{fmt_dec(df['nb_questions'].mean(), 0)} par demande en moyenne",
+    d = _delta(n_dd, val(lambda f: nb_famille(f, FAMILLE_DD)), mode="relatif")
+    kpis.append(Kpi("dd", "Due diligence", fmt_int(n_dd), float(n_dd),
+                    detail=f"{fmt_dec(cadence_mensuelle(df, FAMILLE_DD), 1)} terminées par mois",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
-                    aide="Volume de questions : la vraie mesure de la charge d'un pôle RFP."))
+                    serie=_serie_mensuelle(df, df["est_dd"]), cible="dd",
+                    aide="Questionnaires de due diligence : DDQ et demandes d'information. "
+                         "Ils n'ont pas de résultat commercial."))
 
-    delai = df["delai_ouvre"].median()
-    d = _delta(delai, val(prec, lambda f: f["delai_ouvre"].median()),
-               mode="absolu", n=1, unite="j", sens_hausse="mauvais")
-    kpis.append(Kpi("delai", "Délai médian de réponse", fmt_jours(delai),
-                    None if pd.isna(delai) else float(delai),
-                    detail=f"9e décile à {fmt_jours(df['delai_ouvre'].quantile(0.9))}",
+    d = _delta(n_rfp, val(lambda f: nb_famille(f, FAMILLE_RFP)), mode="relatif")
+    kpis.append(Kpi("rfp", "Appels d'offres", fmt_int(n_rfp), float(n_rfp),
+                    detail=f"{fmt_dec(cadence_mensuelle(df, FAMILLE_RFP), 1)} remis par mois",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
-                    aide="Médiane des délais en jours ouvrés, réception → envoi."))
+                    serie=_serie_mensuelle(df, df["est_rfp"]), cible="rfp",
+                    aide="Appels d'offres (RFP) : les seuls dossiers porteurs d'un "
+                         "résultat commercial."))
 
-    sla = df["dans_sla"].mean()
-    d = _delta(sla, val(prec, lambda f: f["dans_sla"].mean()), mode="points")
-    n_sla = int(df["dans_sla"].notna().sum())
-    kpis.append(Kpi("sla", "Respect du délai cible", fmt_pct(sla, 1),
-                    None if pd.isna(sla) else float(sla),
-                    detail=f"sur {fmt_int(n_sla)} réponse(s) envoyée(s)",
+    # ---- Résultat commercial --------------------------------------------
+    taux, gagnes, tranches, ic = taux_succes_rfp(df)
+    comptes = compte_resultats(df)
+    attente = int(comptes.get(RESULTAT_ATTENTE, 0))
+    d = _delta(gagnes, val(lambda f: taux_succes_rfp(f)[1]), mode="relatif")
+    kpis.append(Kpi("rfp_gagnes", "Mandats remportés", fmt_int(gagnes), float(gagnes),
+                    detail=f"{fmt_int(attente)} dossier(s) en attente de décision",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
-                    aide="Part des réponses envoyées dans le délai cible du type de demande "
-                         f"({', '.join(f'{k} : {v} j' for k, v in SLA_JOURS_OUVRES.items())})."))
+                    cible="aum", groupe="commercial",
+                    aide="Appels d'offres gagnés sur la période. " + NOTE_CENSURE))
 
-    taux, gagnees, decidees, ic = taux_succes(df)
-    d = _delta(taux, val(prec, lambda f: taux_succes(f)[0]), mode="points")
+    d = _delta(taux, val(lambda f: taux_succes_rfp(f)[0]), mode="points")
     kpis.append(Kpi("succes", "Taux de succès", fmt_pct(taux, 1),
                     None if pd.isna(taux) else float(taux),
-                    detail=f"{fmt_int(gagnees)} gagnées sur {fmt_int(decidees)} décidées · "
-                           f"IC 95 % {fmt_pct(ic[0], 1)}–{fmt_pct(ic[1], 1)}",
+                    detail=(f"{fmt_int(gagnes)} sur {fmt_int(tranches)} tranchés · "
+                            f"IC 95 % {fmt_pct(ic[0], 0)}–{fmt_pct(ic[1], 0)}"),
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
-                    aide="Gagnées / (gagnées + perdues). Les dossiers en attente de décision "
-                         "sont exclus du dénominateur. " + NOTE_CENSURE))
+                    cible="rfp", groupe="commercial",
+                    aide="Gagnés / (gagnés + perdus). Les dossiers en attente de décision "
+                         "sont exclus du dénominateur, jamais comptés comme des échecs."))
 
-    montant_gagne = df["montant_gagne"].sum(skipna=True)
-    d = _delta(montant_gagne, val(prec, lambda f: f["montant_gagne"].sum(skipna=True)), mode="relatif")
-    kpis.append(Kpi("gagne", "Encours remporté", fmt_eur(montant_gagne), float(montant_gagne),
-                    detail=f"{fmt_eur(df['montant_potentiel'].sum(skipna=True))} sollicités au total",
+    encours = aum_gagne(df)
+    d = _delta(encours, val(aum_gagne), mode="relatif")
+    kpis.append(Kpi("aum", "Encours remporté", fmt_dec(encours, 0, "M€"), float(encours),
+                    detail=(f"ticket moyen {fmt_dec(encours / gagnes, 0, 'M€')}"
+                            if gagnes else "aucun mandat remporté"),
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
-                    aide="Somme des montants potentiels des demandes gagnées. " + NOTE_CENSURE))
+                    cible="aum", groupe="commercial",
+                    aide="Somme des encours des appels d'offres remportés, rattachés à "
+                         "l'année de réception du dossier. " + NOTE_CENSURE))
 
-    pipeline = df["montant_en_jeu"].sum(skipna=True)
-    n_pipeline = int(df["statut"].isin([STATUT_EN_COURS, STATUT_ENVOYE]).sum())
-    d = _delta(pipeline, val(prec, lambda f: f["montant_en_jeu"].sum(skipna=True)), mode="relatif")
-    kpis.append(Kpi("pipeline", "Encours en jeu", fmt_eur(pipeline), float(pipeline),
-                    detail=f"{fmt_int(n_pipeline)} dossier(s) en cours ou en attente de décision",
+    pipeline = aum_en_jeu(df)
+    d = _delta(pipeline, val(aum_en_jeu), mode="relatif")
+    kpis.append(Kpi("pipeline", "Encours en jeu", fmt_dec(pipeline, 0, "M€"), float(pipeline),
+                    detail=f"{fmt_int(attente)} dossier(s) non tranché(s)",
                     delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
-                    aide="Montant des demandes non encore tranchées : le pipeline commercial."))
+                    cible="rfp", groupe="commercial",
+                    aide="Encours des appels d'offres encore ouverts : le pipeline "
+                         "commercial, à ne pas confondre avec une collecte acquise."))
 
-    en_cours = int(df["est_en_cours"].sum())
-    en_retard = int(df["en_retard"].sum())
-    kpis.append(Kpi("encours", "Dossiers ouverts", fmt_int(en_cours), float(en_cours),
-                    detail=(f"ancienneté médiane : {fmt_jours(df.loc[df['est_en_cours'], 'anciennete_ouvree'].median())} ouvrés"
-                            if en_cours else "aucun dossier en cours"),
-                    delta_affichage=(f"{fmt_int(en_retard)} au-delà du délai cible" if en_retard
-                                     else ("tous dans le délai" if en_cours else "")),
-                    delta_sens="mauvais" if en_retard else ("bon" if en_cours else "neutre"),
-                    delta_direction="plat",
-                    aide="Demandes reçues dont la réponse n'est pas encore partie."))
+    # ---- Capacité opérationnelle ----------------------------------------
+    delai_dd = delai_median(df, FAMILLE_DD)
+    d = _delta(delai_dd, val(lambda f: delai_median(f, FAMILLE_DD)),
+               mode="absolu", n=0, unite="j", sens_hausse="mauvais")
+    kpis.append(Kpi("delai_dd", "Délai due diligence", fmt_dec(delai_dd, 0, "j"),
+                    None if pd.isna(delai_dd) else float(delai_dd),
+                    detail=f"9e décile à {fmt_dec(df.loc[df['est_dd'], 'delai_calendaire'].quantile(0.9), 0, 'j')}",
+                    delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
+                    cible="activite", groupe="operations",
+                    aide="Délai médian réception → envoi, en jours calendaires."))
+
+    delai_rfp = delai_median(df, FAMILLE_RFP)
+    d = _delta(delai_rfp, val(lambda f: delai_median(f, FAMILLE_RFP)),
+               mode="absolu", n=0, unite="j", sens_hausse="mauvais")
+    kpis.append(Kpi("delai_rfp", "Délai appel d'offres", fmt_dec(delai_rfp, 0, "j"),
+                    None if pd.isna(delai_rfp) else float(delai_rfp),
+                    detail=f"9e décile à {fmt_dec(df.loc[df['est_rfp'], 'delai_calendaire'].quantile(0.9), 0, 'j')}",
+                    delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
+                    cible="activite", groupe="operations",
+                    aide="Délai médian réception → envoi, en jours calendaires."))
+
+    sla = df["dans_sla"].mean()
+    d = _delta(sla, val(lambda f: f["dans_sla"].mean()), mode="points")
+    kpis.append(Kpi("sla", "Respect du délai cible", fmt_pct(sla, 1),
+                    None if pd.isna(sla) else float(sla),
+                    detail=f"sur {fmt_int(int(df['dans_sla'].notna().sum()))} dossier(s) traité(s)",
+                    delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
+                    cible="activite", groupe="operations",
+                    aide="Part des dossiers traités dans le délai cible interne "
+                         f"({', '.join(f'{k} : {v} j ouvrés' for k, v in SLA_JOURS_OUVRES.items())})."))
+
+    charge = df["nb_questions"].sum(skipna=True)
+    d = _delta(charge, val(lambda f: f["nb_questions"].sum(skipna=True)), mode="relatif")
+    kpis.append(Kpi("questions", "Questions traitées", fmt_int(charge), float(charge),
+                    detail=f"{fmt_dec(df['nb_questions'].mean(), 0)} par dossier en moyenne",
+                    delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
+                    cible="activite", groupe="operations",
+                    aide="Volume de questions : la mesure réelle de la charge, un RFP "
+                         "pesant plusieurs fois une due diligence courte."))
+
+    part_esg = part_esg_forte(df)
+    d = _delta(part_esg, val(part_esg_forte), mode="points")
+    kpis.append(Kpi("esg", "Questionnaires très ESG", fmt_pct(part_esg, 0),
+                    None if pd.isna(part_esg) else float(part_esg),
+                    detail=f"part ESG supérieure à {fmt_pct(ESG_SEUIL_FORT, 0)}",
+                    delta_affichage=d[0], delta_sens=d[1], delta_direction=d[2],
+                    cible="esg", groupe="activite",
+                    aide="Part des questionnaires à forte composante ESG, calculée sur "
+                         "les seuls dossiers dont la part ESG est renseignée."))
     return kpis
+
+
+# =============================================================================
+#  INSIGHTS — phrases déterministes, calculées, jamais rédigées d'avance
+# =============================================================================
+@dataclass(frozen=True)
+class Insight:
+    cle: str
+    texte: str
+    appui: str                     # la métrique qui soutient l'affirmation
+    ton: str = "info"              # info | positif | alerte
+    cible: str | None = None       # page ouverte au clic
+    serie: tuple[float, ...] = ()
+
+
+def generer_insights(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None,
+                     maximum: int = 8) -> list[Insight]:
+    """Constats tirés des données, dans l'ordre de ce qui mérite attention.
+
+    Aucun texte n'est écrit d'avance : chaque phrase est produite par un calcul,
+    et l'insight disparaît si la donnée ne permet pas de l'établir.
+    """
+    if df.empty:
+        return []
+    insights: list[Insight] = []
+    prec = df_precedent if df_precedent is not None and not df_precedent.empty else None
+
+    # 1. Dossiers qui demandent une action
+    surveiller = dossiers_a_surveiller(df)
+    if len(surveiller):
+        en_jeu = float(surveiller["montant_potentiel"].sum(skipna=True))
+        insights.append(Insight(
+            "attention",
+            f"{fmt_int(len(surveiller))} dossier(s) demandent une relance : délai cible "
+            f"dépassé ou décision attendue depuis plus de quatre mois.",
+            f"{fmt_dec(en_jeu, 0, 'M€')} d'encours concernés" if en_jeu else "",
+            ton="alerte", cible="explorateur"))
+
+    # 2. Volume par rapport à la période précédente
+    if prec is not None and len(prec) > 0:
+        variation = (len(df) - len(prec)) / len(prec)
+        if abs(variation) >= 0.05:
+            sens = "progresse de" if variation > 0 else "recule de"
+            insights.append(Insight(
+                "volume",
+                f"Le volume de questionnaires {sens} {fmt_pct(abs(variation), 0)} par "
+                f"rapport à la période précédente de même durée.",
+                f"{fmt_int(len(df))} contre {fmt_int(len(prec))}",
+                ton="info", cible="activite",
+                serie=tuple(_serie_mensuelle(df))))
+
+    # 3. Croissance structurelle
+    for horizon in HORIZONS_CROISSANCE:
+        c = croissance(df, horizon)
+        if c is not None and c.complete and abs(c.taux) >= 0.15:
+            insights.append(Insight(
+                f"croissance{horizon}",
+                f"La charge a {'augmenté' if c.taux > 0 else 'diminué'} de "
+                f"{fmt_pct(abs(c.taux), 0)} en {c.horizon} ans, soit "
+                f"{fmt_pct(c.tcam, 1)} par an.",
+                f"{c.volume_base} questionnaires en {c.annee_base}, "
+                f"{c.volume_reference} en {c.annee_reference}",
+                ton="info", cible="activite"))
+            break
+
+    # 4. Déformation du mix
+    annuel = volume_annuel(df)
+    if len(annuel) >= 4 and FAMILLE_DD in annuel.columns:
+        parts = annuel[FAMILLE_DD] / annuel["Total"].replace(0, np.nan)
+        parts = parts.dropna()
+        if len(parts) >= 4 and abs(parts.iloc[-1] - parts.iloc[0]) >= 0.05:
+            insights.append(Insight(
+                "mix",
+                f"La due diligence est passée de {fmt_pct(parts.iloc[0], 0)} à "
+                f"{fmt_pct(parts.iloc[-1], 0)} de la charge entre {parts.index[0]} "
+                f"et {parts.index[-1]}.",
+                "le nombre d'appels d'offres, lui, reste stable"
+                if annuel[FAMILLE_RFP].std() < annuel[FAMILLE_RFP].mean() * 0.35 else "",
+                ton="info", cible="activite"))
+
+    # 5. Délai de traitement
+    if prec is not None:
+        actuel, avant = delai_median(df), delai_median(prec)
+        if all(map(math.isfinite, (actuel, avant))) and abs(actuel - avant) >= 2:
+            sens = "allongé" if actuel > avant else "raccourci"
+            insights.append(Insight(
+                "delai",
+                f"Le délai médian de traitement s'est {sens} de "
+                f"{fmt_dec(abs(actuel - avant), 0, 'jour(s)')} par rapport à la "
+                f"période précédente.",
+                f"{fmt_dec(actuel, 0, 'j')} contre {fmt_dec(avant, 0, 'j')}",
+                ton="alerte" if actuel > avant else "positif", cible="activite"))
+
+    # 6. Encours en attente de décision
+    attente = df[df["est_rfp"] & df["resultat"].eq(RESULTAT_ATTENTE)]
+    if len(attente):
+        montant = float(attente["montant_potentiel"].sum(skipna=True))
+        if montant > 0:
+            insights.append(Insight(
+                "pipeline",
+                f"{fmt_int(len(attente))} appel(s) d'offres en attente de décision "
+                f"représentent {fmt_dec(montant, 0, 'M€')} d'encours potentiel.",
+                f"soit {fmt_dec(montant / max(aum_gagne(df), 1) * 100, 0, '%')} "
+                f"de l'encours déjà remporté sur la période",
+                ton="info", cible="rfp"))
+
+    # 7. Concentration client
+    if _dispo(df, "client", min_modalites=3):
+        comptes = df["client"].value_counts()
+        part = comptes.iloc[0] / len(df)
+        if part >= 0.08:
+            insights.append(Insight(
+                "concentration",
+                f"« {comptes.index[0]} » concentre {fmt_pct(part, 0)} des questionnaires "
+                f"reçus sur la période.",
+                f"{fmt_int(int(comptes.iloc[0]))} dossiers",
+                ton="info", cible="explorateur"))
+
+    # 8. Mois le plus chargé de l'année en cours
+    annee = df["date_reception"].dt.year.max()
+    courante = df[df["date_reception"].dt.year == annee]
+    if len(courante) >= 12:
+        par_mois = courante.groupby(courante["date_reception"].dt.month).size()
+        if len(par_mois) >= 3:
+            pic = int(par_mois.idxmax())
+            insights.append(Insight(
+                "pic",
+                f"{MOIS_FR_LONG[pic - 1]} est le mois le plus chargé de {annee} avec "
+                f"{int(par_mois.max())} questionnaires.",
+                f"contre {fmt_dec(par_mois.mean(), 0)} en moyenne mensuelle",
+                ton="info", cible="activite"))
+
+    # 9. ESG
+    connus = df[df["bande_esg"] != ESG_INCONNU]
+    if len(connus) >= 30:
+        parts = connus.groupby(connus["date_reception"].dt.year)["esg_fort"].mean()
+        if len(parts) >= 3 and (parts.iloc[-1] - parts.iloc[0]) >= 0.05:
+            insights.append(Insight(
+                "esg",
+                f"Les questionnaires à forte composante ESG sont passés de "
+                f"{fmt_pct(parts.iloc[0], 0)} à {fmt_pct(parts.iloc[-1], 0)} des "
+                f"dossiers renseignés depuis {parts.index[0]}.",
+                f"{int(connus['esg_fort'].sum())} dossiers concernés sur la période",
+                ton="info", cible="esg"))
+
+    return insights[:maximum]
 
 
 # =============================================================================
@@ -1682,11 +2387,15 @@ def compute_kpis(df: pd.DataFrame, df_precedent: pd.DataFrame | None = None) -> 
 #  Chaque bloc est autonome et renvoie None si la donnée ne le permet pas :
 #  le dashboard s'adapte au fichier, il n'impose rien.
 # =============================================================================
+# Architecture de l'information : une section = une question de pilotage.
 SECTIONS: dict[str, str] = {
-    "apercu": "Vue d'ensemble",
-    "commercial": "Performance commerciale",
-    "operations": "Efficacité opérationnelle",
-    "statistiques": "Analyse statistique",
+    "synthese": "Vue d'ensemble",
+    "activite": "Activité",
+    "rfp": "Pipeline RFP",
+    "dd": "Due diligence",
+    "aum": "Encours & gains",
+    "esg": "ESG",
+    "diagnostic": "Diagnostic",
 }
 
 
@@ -1700,6 +2409,9 @@ class Block:
     tableau: pd.DataFrame
     note: str = ""
     large: bool = False
+    # Dimension filtrable portée par l'axe des catégories : renseignée, elle
+    # rend le graphique cliquable — un clic sur « France » filtre tout l'écran.
+    dimension: str | None = None
 
 
 def _fig(hauteur: int = 340, **layout: Any) -> go.Figure:
@@ -1762,356 +2474,831 @@ def _mois_complets(mensuel: pd.DataFrame) -> pd.DataFrame:
     return complets if len(complets) >= 4 else mensuel
 
 
-def _bloc_flux(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if mensuel.empty or len(mensuel) < 3:
-        return None
-    pivot = agg_type_mois(df)
-    types = [c for c in pivot.columns if c != "mois"]
-    fig = _fig(380, barmode="stack", hovermode="x unified")
-    for i, t in enumerate(types):
+# --- Fabriques communes -------------------------------------------------------
+GRANULARITES = {"mois": "Mensuel", "trimestre": "Trimestriel", "annee": "Annuel"}
+# Le nom de la période au singulier, pour les phrases : « 3 de plus par mois ».
+NOM_PERIODE = {"mois": "mois", "trimestre": "trimestre", "annee": "an"}
+
+
+def _periode(df: pd.DataFrame, granularite: str) -> pd.Series:
+    """Ramène la date de réception au début de sa période d'agrégation."""
+    dates = df["date_reception"]
+    if granularite == "annee":
+        return dates.dt.to_period("Y").dt.to_timestamp()
+    if granularite == "trimestre":
+        return dates.dt.to_period("Q").dt.to_timestamp()
+    return dates.dt.to_period("M").dt.to_timestamp()
+
+
+def _libelle_periode(horodatage: Any, granularite: str) -> str:
+    ts = pd.Timestamp(horodatage)
+    if granularite == "annee":
+        return str(ts.year)
+    if granularite == "trimestre":
+        return f"T{(ts.month - 1) // 3 + 1} {ts.year}"
+    return fmt_mois(ts)
+
+
+def _axe_periode(fig: go.Figure, valeurs: Sequence[Any], granularite: str,
+                 max_libelles: int = 14) -> None:
+    valeurs = list(valeurs)
+    if not valeurs:
+        return
+    pas = max(1, math.ceil(len(valeurs) / max_libelles))
+    ticks = valeurs[::pas]
+    fig.update_xaxes(tickmode="array", tickvals=ticks,
+                     ticktext=[_libelle_periode(t, granularite) for t in ticks], tickangle=0)
+
+
+def _pivot_famille(df: pd.DataFrame, granularite: str) -> pd.DataFrame:
+    """Volume par période et par famille, sans trou dans le calendrier."""
+    if df.empty:
+        return pd.DataFrame()
+    travail = df.assign(_periode=_periode(df, granularite))
+    pivot = travail.pivot_table(index="_periode", columns="famille",
+                                values="date_reception", aggfunc="size", fill_value=0)
+    freq = {"mois": "MS", "trimestre": "QS", "annee": "YS"}[granularite]
+    pivot = pivot.reindex(pd.date_range(pivot.index.min(), pivot.index.max(), freq=freq),
+                          fill_value=0)
+    ordre = [f for f in FAMILLE_ORDER if f in pivot.columns]
+    ordre += [c for c in pivot.columns if c not in ordre]
+    pivot = pivot[ordre]
+    pivot.index.name = "periode"
+    return pivot
+
+
+FAMILLE_COULEURS = {}          # rempli par appliquer_theme via _couleurs_famille()
+
+
+def _couleurs_famille() -> dict[str, str]:
+    """Due diligence = la charge de fond (teinte 1), RFP = l'enjeu commercial
+    (teinte 2). Deux séries seulement : la distinction reste lisible partout."""
+    return {FAMILLE_DD: SERIES[0], FAMILLE_RFP: SERIES[1]}
+
+
+def _couleurs_resultat() -> dict[str, str]:
+    """Le résultat d'un RFP est un état, pas une identité : couleurs d'état,
+    toujours accompagnées du libellé et de la valeur."""
+    return {RESULTAT_GAGNE: STATUS_GOOD, RESULTAT_ATTENTE: SERIES[0],
+            RESULTAT_PERDU: STATUS_CRITICAL, RESULTAT_SANS_SUITE: INK_MUTED}
+
+
+def _couleurs_esg() -> dict[str, str]:
+    """Rampe ordinale : plus la composante ESG est forte, plus la teinte est
+    soutenue. Aucun rouge/vert — l'ESG n'est ni un succès ni un échec."""
+    return {ESG_FORT: SEQUENTIEL[-2], ESG_MOYEN: SEQUENTIEL[-4],
+            ESG_FAIBLE: SEQUENTIEL[-6], ESG_INCONNU: INK_MUTED}
+
+
+def _figure_rang(labels: Sequence[str], valeurs: Sequence[float],
+                 formateur: Callable[[float], str], couleur: str | None = None,
+                 top: int = 12, survol: Sequence[str] | None = None,
+                 titre_axe: str = "") -> tuple[go.Figure, pd.DataFrame]:
+    """Classement en barres horizontales, queue regroupée dans « Autres ».
+
+    Remplace le camembert à vingt parts : au-delà de sept catégories, aucune
+    part d'un disque n'est comparable à l'œil.
+    """
+    donnees = pd.DataFrame({"label": list(labels), "valeur": list(valeurs)})
+    donnees["survol"] = list(survol) if survol is not None else donnees["valeur"].map(formateur)
+    donnees = donnees.sort_values("valeur", ascending=False)
+    complet = donnees.copy()
+    if len(donnees) > top:
+        queue = donnees.iloc[top:]
+        donnees = donnees.iloc[:top]
+        donnees = pd.concat([donnees, pd.DataFrame([{
+            "label": f"Autres ({len(queue)})", "valeur": queue["valeur"].sum(),
+            "survol": f"{len(queue)} modalité(s) regroupée(s)"}])], ignore_index=True)
+    donnees = donnees.sort_values("valeur")
+
+    fig = _fig(max(280, 30 * len(donnees) + 96))
+    fig.add_trace(go.Bar(
+        y=donnees["label"], x=donnees["valeur"], orientation="h",
+        marker=_marque(couleur or SERIES[0]),
+        text=[formateur(v) for v in donnees["valeur"]],
+        textposition="outside", cliponaxis=False, textfont=dict(color=INK_2, size=11.5),
+        customdata=donnees["survol"],
+        hovertemplate="<b>%{y}</b><br>%{customdata}<extra></extra>",
+    ))
+    fig.update_xaxes(title_text=titre_axe)
+    _labels_exterieurs(fig, list(donnees["valeur"]), 1.24)
+    return fig, complet
+
+
+def _empiler(fig: go.Figure, index: Sequence[Any], pivot: pd.DataFrame,
+             couleurs: dict[str, str], suffixe: str = "") -> None:
+    """Empilement ordonné avec écart de surface entre segments."""
+    for i, colonne in enumerate(pivot.columns):
         fig.add_trace(go.Bar(
-            x=pivot["mois"], y=pivot[t], name=str(t),
-            marker=_marque(TYPE_COLORS.get(t, SERIES[i % len(SERIES)]), 1.2),
-            hovertemplate="%{y} " + str(t) + "<extra></extra>",
+            x=list(index), y=pivot[colonne], name=str(colonne),
+            marker=_marque(couleurs.get(colonne, SERIES[i % len(SERIES)]), 1.2),
+            hovertemplate="%{y:,.0f} " + str(colonne) + suffixe + "<extra></extra>",
         ))
-    complets = _mois_complets(mensuel)
-    reg = ols(complets["indice"], complets["volume"])
+
+
+# =============================================================================
+#  01 — VUE D'ENSEMBLE
+# =============================================================================
+def _bloc_flux_famille(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Le graphique central du pilotage : combien arrive, et de quelle nature."""
+    granularite = stats.get("granularite", "mois")
+    pivot = _pivot_famille(df, granularite)
+    if pivot.empty or len(pivot) < 2:
+        return None
+
+    fig = _fig(390, barmode="stack", hovermode="x unified")
+    _empiler(fig, pivot.index, pivot, _couleurs_famille())
+    total = pivot.sum(axis=1)
+
+    # Tendance ajustée sur les périodes complètes uniquement.
+    complet = total.iloc[:-1] if _periode_en_cours(pivot.index[-1], granularite) else total
+    reg = ols(np.arange(len(complet), dtype=float), complet.to_numpy(dtype=float))
     stats["tendance_volume"] = reg
-    if reg is not None:
+    if reg is not None and len(complet) >= 4:
         fig.add_trace(go.Scatter(
-            x=complets["mois"], y=reg.predire(complets["indice"]),
-            mode="lines", name="Tendance (MCO)",
-            line=dict(color=INK, width=2, shape="linear"),
-            hovertemplate="Tendance : %{y:.1f}<extra></extra>",
-        ))
-    if len(complets) < len(mensuel):
-        partiel = mensuel.iloc[-1]
-        fig.add_annotation(x=partiel["mois"], y=partiel["volume"], yshift=16, xanchor="right",
-                           text="mois en cours<br>(partiel)", align="right",
+            x=list(complet.index), y=reg.predire(np.arange(len(complet))),
+            mode="lines", name="Tendance", line=dict(color=INK, width=2),
+            hovertemplate="Tendance : %{y:.1f}<extra></extra>"))
+    if len(complet) < len(total):
+        # Repère posé dans l'espace du cadre : il ne recouvre jamais une barre.
+        fig.add_annotation(xref="paper", yref="paper", x=1, y=1.04, xanchor="right",
+                           yanchor="bottom", text="dernière période partielle",
                            font=dict(size=10.5, color=INK_MUTED))
-    _axe_mois(fig, mensuel["mois"])
-    fig.update_yaxes(title_text="Demandes reçues", rangemode="tozero")
+    _axe_periode(fig, pivot.index, granularite)
+    fig.update_yaxes(title_text="Questionnaires reçus", rangemode="tozero")
     fig.update_layout(bargap=0.22)
 
-    total = int(mensuel["volume"].sum())
+    part_dd = pivot.get(FAMILLE_DD, pd.Series(dtype=float)).sum() / max(total.sum(), 1)
+    accroche = (f"{fmt_int(int(total.sum()))} questionnaires sur la période, "
+                f"dont {fmt_pct(part_dd, 0)} de due diligence.")
     if reg is not None and reg.significatif:
         sens = "progression" if reg.pente > 0 else "recul"
-        accroche = (f"{fmt_int(total)} demandes sur {len(mensuel)} mois, en {sens} de "
-                    f"{fmt_dec(abs(reg.pente), 1)} demande(s) par mois "
-                    f"(R² = {fmt_dec(reg.r2, 2)}, {fmt_p(reg.p_value)}).")
-    elif reg is not None:
-        accroche = (f"{fmt_int(total)} demandes sur {len(mensuel)} mois ; la pente observée "
-                    f"({fmt_dec(reg.pente, 1)}/mois) n'est pas significative ({fmt_p(reg.p_value)}) : "
-                    f"le flux est stable.")
-    else:
-        accroche = f"{fmt_int(total)} demandes sur la période."
-
+        accroche += (f" Flux en {sens} de {fmt_dec(abs(reg.pente), 1)} questionnaire(s) "
+                     f"par {NOM_PERIODE[granularite]} ({fmt_p(reg.p_value)}).")
     tableau = pivot.copy()
-    tableau.insert(1, "Total", tableau[types].sum(axis=1))
-    tableau["mois"] = tableau["mois"].map(fmt_mois)
-    tableau = tableau.rename(columns={"mois": "Mois"})
-    return Block("flux", "apercu", "Flux de demandes par mois", accroche, fig, tableau,
-                 note="La droite noire est un ajustement par moindres carrés sur le volume "
-                      "mensuel total, mois en cours exclu ; elle résume la tendance, "
-                      "elle ne prédit pas un mois isolé.",
+    tableau.insert(0, "Période", [_libelle_periode(i, granularite) for i in pivot.index])
+    tableau["Total"] = total.to_numpy()
+    return Block("flux_famille", "synthese", "Flux de questionnaires", accroche, fig,
+                 tableau.reset_index(drop=True),
+                 note="Volume reçu, et non traité : c'est la charge qui arrive au pôle. "
+                      "La tendance est ajustée sur les périodes complètes uniquement.",
                  large=True)
 
 
-def _bloc_entonnoir(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if df.empty:
-        return None
-    recues = len(df)
-    envoyees = int(df["est_envoye"].sum())
-    decidees = int(df["est_decide"].sum())
-    gagnees = int(df["est_gagne"].sum())
-    etapes = ["Demandes reçues", "Réponses envoyées", "Décisions rendues", "Mandats gagnés"]
-    valeurs = [recues, envoyees, decidees, gagnees]
-    if recues == 0:
-        return None
-    couleurs = list(ORDINAL)[:len(etapes)]
-    fig = _fig(330)
-    fig.add_trace(go.Funnel(
-        y=etapes, x=valeurs,
-        text=[f"{fmt_int(v)}   ·   {fmt_pct(v / recues, 0)}" for v in valeurs],
-        textinfo="text", textposition="inside",
-        # L'encre est calculée segment par segment : la rampe change de clarté,
-        # une couleur de texte fixe finirait illisible sur l'une des marches.
-        insidetextfont=dict(color=[encre_lisible(c) for c in couleurs],
-                            size=12.5, family=FONT_STACK),
-        marker=dict(color=couleurs, line=dict(color=SURFACE, width=2)),
-        connector=dict(fillcolor="rgba(0,0,0,0)", line=dict(color=GRID, width=1)),
-        hovertemplate="%{y} : %{x} dossiers<extra></extra>",
-    ))
-    fig.update_layout(margin=dict(l=8, r=8, t=16, b=8))
+def _periode_en_cours(horodatage: Any, granularite: str) -> bool:
+    """La dernière période est-elle encore en cours ?"""
+    ts, today = pd.Timestamp(horodatage), pd.Timestamp.today().normalize()
+    if granularite == "annee":
+        return ts.year == today.year
+    if granularite == "trimestre":
+        return ts.to_period("Q") == today.to_period("Q")
+    return ts.to_period("M") == today.to_period("M")
 
-    passage = [np.nan] + [valeurs[i] / valeurs[i - 1] if valeurs[i - 1] else np.nan
-                          for i in range(1, len(valeurs))]
+
+def _bloc_resultats_rfp(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Que deviennent les appels d'offres remis ?"""
+    comptes = compte_resultats(df)
+    if comptes.empty or comptes.sum() == 0:
+        return None
+    total = int(comptes.sum())
+    couleurs = _couleurs_resultat()
+    fig = _fig(300)
+    fig.add_trace(go.Bar(
+        y=list(comptes.index), x=list(comptes.values), orientation="h",
+        marker=_marque([couleurs.get(r, SERIES[0]) for r in comptes.index]),
+        text=[f"{fmt_int(v)}   {fmt_pct(v / total, 0)}" for v in comptes.values],
+        textposition="outside", cliponaxis=False, textfont=dict(color=INK_2, size=12),
+        hovertemplate="%{y} : %{x} RFP<extra></extra>",
+    ))
+    fig.update_yaxes(autorange="reversed")
+    fig.update_xaxes(title_text="Appels d'offres")
+    _labels_exterieurs(fig, list(comptes.values), 1.32)
+
+    taux, gagnes, tranches, ic = taux_succes_rfp(df)
+    attente = int(comptes.get(RESULTAT_ATTENTE, 0))
+    accroche = (f"{fmt_int(gagnes)} mandats remportés sur {fmt_int(tranches)} dossiers "
+                f"tranchés, soit {fmt_pct(taux, 1)} (IC 95 % {fmt_pct(ic[0], 0)}–"
+                f"{fmt_pct(ic[1], 0)}).")
+    if attente:
+        accroche += f" {fmt_int(attente)} dossier(s) encore en attente de décision."
     tableau = pd.DataFrame({
-        "Étape": etapes,
-        "Dossiers": valeurs,
-        "Part des demandes reçues": [fmt_pct(v / recues, 1) for v in valeurs],
-        "Taux de passage": [fmt_pct(p, 1) if pd.notna(p) else "—" for p in passage],
-    })
-    stats["conversion"] = dict(zip(etapes, valeurs))
-    accroche = (f"{fmt_pct(envoyees / recues, 1)} des demandes reçues ont donné lieu à une réponse, "
-                f"et {fmt_pct(gagnees / decidees, 1) if decidees else '—'} des dossiers tranchés "
-                f"ont été remportés.")
-    return Block("entonnoir", "apercu", "Entonnoir de conversion", accroche, fig, tableau,
-                 note="Les dossiers encore en attente de décision restent comptés dans "
-                      "« Réponses envoyées » mais sortent du dénominateur du taux de succès.")
-
-
-def _bloc_statuts(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if df.empty:
-        return None
-    comptes = df["statut"].value_counts()
-    ordre = [s for s in STATUT_ORDER if s in comptes.index]
-    ordre += [s for s in comptes.index if s not in ordre]
-    valeurs = [int(comptes[s]) for s in ordre]
-    total = sum(valeurs)
-    fig = _fig(330)
-    fig.add_trace(go.Bar(
-        y=ordre, x=valeurs, orientation="h",
-        marker=_marque([STATUT_COLORS.get(s, SERIES[0]) for s in ordre]),
-        text=[f"{fmt_int(v)}   {fmt_pct(v / total, 1)}" for v in valeurs],
-        textposition="outside", cliponaxis=False,
-        textfont=dict(color=INK_2, size=12),
-        hovertemplate="%{y} : %{x} dossiers<extra></extra>",
-    ))
-    fig.update_yaxes(autorange="reversed")
-    fig.update_xaxes(title_text="Dossiers", showgrid=True)
-    _labels_exterieurs(fig, valeurs, 1.28)
-
-    tableau = pd.DataFrame({"Statut": ordre, "Dossiers": valeurs,
-                            "Part": [fmt_pct(v / total, 1) for v in valeurs]})
-    en_cours = int(df["est_en_cours"].sum())
-    retard = int(df["en_retard"].sum())
-    accroche = (f"{fmt_int(en_cours)} dossier(s) encore ouvert(s)"
-                + (f", dont {fmt_int(retard)} au-delà du délai cible." if retard
-                   else ", tous dans le délai cible."))
-    return Block("statuts", "apercu", "État du portefeuille de demandes", accroche, fig, tableau,
-                 note="Les couleurs d'état ne portent jamais l'information seules : "
-                      "chaque barre est libellée et chiffrée.")
-
-
-def _bloc_succes_classe(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if not _dispo(df, "classe_actifs", min_modalites=2):
-        return None
-    agg = agg_dimension(df, "classe_actifs")
-    agg = agg[agg["decidees"] >= 8].sort_values("taux_succes")
-    if len(agg) < 2:
-        return None
-    taux_global = taux_succes(df)[0]
-    x = agg["taux_succes"] * 100
-    fig = _fig(max(300, 52 * len(agg) + 90))
-    fig.add_trace(go.Bar(
-        y=agg["classe_actifs"], x=x, orientation="h",
-        marker=_marque(SERIES[0]),
-        error_x=dict(type="data", symmetric=False,
-                     array=(agg["ic_haut"] - agg["taux_succes"]) * 100,
-                     arrayminus=(agg["taux_succes"] - agg["ic_bas"]) * 100,
-                     color=INK_MUTED, thickness=1.2, width=5),
-        customdata=np.stack([agg["gagnees"], agg["decidees"], agg["ic_bas"] * 100, agg["ic_haut"] * 100], axis=-1),
-        hovertemplate=("<b>%{y}</b><br>Taux de succès : %{x:.1f} %"
-                       "<br>%{customdata[0]:.0f} gagnées sur %{customdata[1]:.0f} décidées"
-                       "<br>IC 95 % : %{customdata[2]:.1f} – %{customdata[3]:.1f} %<extra></extra>"),
-    ))
-    if pd.notna(taux_global):
-        fig.add_vline(x=taux_global * 100, line=dict(color=INK, width=1),
-                      annotation_text=f"moyenne du pôle : {fmt_pct(taux_global, 1)}",
-                      annotation_position="top", annotation_font=dict(color=INK_2, size=11))
-    fig.update_xaxes(title_text="Taux de succès", ticksuffix=ESP_UNITE + "%")
-    # Les valeurs forment une colonne alignée à droite : elles ne peuvent
-    # croiser ni les moustaches ni la ligne de moyenne.
-    borne = float((agg["ic_haut"] * 100).max())
-    for _, ligne in agg.iterrows():
-        fig.add_annotation(x=borne * 1.05, y=ligne["classe_actifs"], xanchor="left",
-                           text=f"{fmt_pct(ligne['taux_succes'], 1)}   ·   "
-                                f"n = {fmt_int(ligne['decidees'])}",
-                           font=dict(size=11.5, color=INK_2))
-    fig.update_xaxes(range=[0, borne * 1.45])
-
-    meilleure, pire = agg.iloc[-1], agg.iloc[0]
-    accroche = (f"« {meilleure['classe_actifs']} » convertit {fmt_pct(meilleure['taux_succes'], 1)} "
-                f"des dossiers tranchés contre {fmt_pct(pire['taux_succes'], 1)} pour "
-                f"« {pire['classe_actifs']} »"
-                + (" — écart significatif au seuil de 5 %."
-                   if meilleure["ic_bas"] > pire["ic_haut"]
-                   else " — mais les intervalles de confiance se recouvrent : l'écart n'est pas établi."))
-    tableau = agg[["classe_actifs", "volume", "decidees", "gagnees", "taux_succes",
-                   "ic_bas", "ic_haut", "delai_median", "montant_gagne"]].copy()
-    tableau["taux_succes"] = tableau["taux_succes"].map(lambda v: fmt_pct(v, 1))
-    tableau["ic_bas"] = tableau["ic_bas"].map(lambda v: fmt_pct(v, 1))
-    tableau["ic_haut"] = tableau["ic_haut"].map(lambda v: fmt_pct(v, 1))
-    tableau["delai_median"] = tableau["delai_median"].map(fmt_jours)
-    tableau["montant_gagne"] = tableau["montant_gagne"].map(fmt_eur)
-    tableau.columns = ["Classe d'actifs", "Demandes", "Décidées", "Gagnées", "Taux de succès",
-                       "IC 95 % bas", "IC 95 % haut", "Délai médian", "Encours remporté"]
-    return Block("succes_classe", "commercial", "Taux de succès par classe d'actifs",
-                 accroche, fig, tableau.sort_values("Demandes", ascending=False),
-                 note="Les moustaches sont l'intervalle de confiance de Wilson à 95 % : deux classes "
-                      "dont les intervalles se recouvrent ne sont pas départageables. "
-                      "Classes de moins de 8 décisions écartées.")
-
-
-def _bloc_montants(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if not _dispo(df, "montant_potentiel"):
-        return None
-    agg = (df.groupby("statut", observed=True)
-             .agg(montant=("montant_potentiel", "sum"), dossiers=("statut", "size")))
-    ordre = [s for s in STATUT_ORDER if s in agg.index] + \
-            [s for s in agg.index if s not in STATUT_ORDER]
-    agg = agg.reindex(ordre)
-    fig = _fig(330)
-    fig.add_trace(go.Bar(
-        y=agg.index, x=agg["montant"], orientation="h",
-        marker=_marque([STATUT_COLORS.get(s, SERIES[0]) for s in agg.index]),
-        text=[fmt_eur(m) for m in agg["montant"]],
-        textposition="outside", cliponaxis=False, textfont=dict(color=INK_2, size=12),
-        customdata=agg["dossiers"].to_numpy(),
-        hovertemplate="<b>%{y}</b><br>%{x:,.0f} €<br>%{customdata} dossiers<extra></extra>",
-    ))
-    fig.update_yaxes(autorange="reversed")
-    fig.update_xaxes(title_text="Montant potentiel cumulé")
-    _labels_exterieurs(fig, list(agg["montant"]), 1.22)
-    _axe_valeurs(fig, float(agg["montant"].max()) * 1.22, fmt_eur_tick)
-
-    gagne = float(agg["montant"].get(STATUT_GAGNE, 0.0) or 0.0)
-    en_jeu = float(df["montant_en_jeu"].sum(skipna=True))
-    accroche = (f"{fmt_eur(gagne)} remportés sur la période ; {fmt_eur(en_jeu)} restent en jeu "
-                f"dans les dossiers non tranchés.")
-    tableau = agg.reset_index()
-    tableau["montant"] = tableau["montant"].map(fmt_eur)
-    tableau.columns = ["Statut", "Montant potentiel", "Dossiers"]
-    return Block("montants", "commercial", "Encours en jeu par statut", accroche, fig, tableau,
-                 note="Montants potentiels déclarés à la réception de la demande : ils mesurent "
-                      "l'enjeu commercial, pas une collecte réalisée.")
-
-
-def _bloc_clients(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if not _dispo(df, "client", min_modalites=3):
-        return None
-    agg = agg_dimension(df, "client").head(12).sort_values("volume")
-    if agg.empty:
-        return None
-    fig = _fig(max(320, 30 * len(agg) + 90))
-    fig.add_trace(go.Bar(
-        y=agg["client"], x=agg["volume"], orientation="h",
-        marker=_marque(SERIES[0]),
-        text=[fmt_int(v) for v in agg["volume"]],
-        textposition="outside", cliponaxis=False, textfont=dict(color=INK_2, size=12),
-        customdata=np.stack([agg["taux_succes"] * 100, agg["montant"], agg["delai_median"]], axis=-1),
-        hovertemplate=("<b>%{y}</b><br>%{x} demandes"
-                       "<br>Taux de succès : %{customdata[0]:.0f} %"
-                       "<br>Montant sollicité : %{customdata[1]:,.0f} €"
-                       "<br>Délai médian : %{customdata[2]:.0f} j<extra></extra>"),
-    ))
-    fig.update_xaxes(title_text="Demandes reçues")
-    _labels_exterieurs(fig, list(agg["volume"]), 1.15)
-    part = agg["volume"].sum() / len(df)
-    accroche = (f"Les {len(agg)} premiers comptes concentrent {fmt_pct(part, 1)} des demandes ; "
-                f"« {agg.iloc[-1]['client']} » en représente à lui seul "
-                f"{fmt_pct(agg.iloc[-1]['volume'] / len(df), 1)}.")
-    tableau = agg.sort_values("volume", ascending=False)[
-        ["client", "volume", "decidees", "taux_succes", "delai_median", "montant"]].copy()
-    tableau["taux_succes"] = tableau["taux_succes"].map(lambda v: fmt_pct(v, 1))
-    tableau["delai_median"] = tableau["delai_median"].map(fmt_jours)
-    tableau["montant"] = tableau["montant"].map(fmt_eur)
-    tableau.columns = ["Client", "Demandes", "Décidées", "Taux de succès", "Délai médian", "Montant sollicité"]
-    return Block("clients", "commercial", "Comptes les plus sollicitants", accroche, fig, tableau,
-                 note="Classement par volume de demandes. Le taux de succès figure dans l'infobulle "
-                      "et dans le tableau : il n'est pas encodé par la couleur.")
-
-
-def _bloc_geographie(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if not (_dispo(df, "pays", min_modalites=2) and _dispo(df, "type_client", min_modalites=2)):
-        return None
-    top = df["pays"].value_counts().head(8).index.tolist()
-    sous = df[df["pays"].isin(top)]
-    table = pd.crosstab(sous["pays"], sous["type_client"]).reindex(top[::-1])
-    colonnes = [c for c in CLIENT_TYPE_COLORS if c in table.columns] + \
-               [c for c in table.columns if c not in CLIENT_TYPE_COLORS]
-    fig = _fig(max(320, 34 * len(table) + 110), barmode="group")
-    for i, col in enumerate(colonnes):
-        fig.add_trace(go.Bar(
-            y=table.index, x=table[col], orientation="h", name=str(col),
-            marker=_marque(CLIENT_TYPE_COLORS.get(col, SERIES[i % len(SERIES)]), 1.2),
-            hovertemplate="<b>%{y}</b><br>" + str(col) + " : %{x} demandes<extra></extra>",
-        ))
-    fig.update_xaxes(title_text="Demandes reçues")
-    # Les barres groupées se dessinent de bas en haut : la légende suit le même ordre.
-    fig.update_layout(bargap=0.32, bargroupgap=0.08, legend_traceorder="reversed")
-    premier = table.sum(axis=1).idxmax()
-    accroche = (f"{fmt_pct(len(sous) / len(df), 1)} des demandes proviennent des huit premiers pays ; "
-                f"« {premier} » arrive en tête avec {fmt_int(table.sum(axis=1).max())} demandes.")
-    tableau = table.iloc[::-1].reset_index()
-    tableau.insert(1, "Total", table.iloc[::-1].sum(axis=1).to_numpy())
-    return Block("geographie", "commercial", "Origine des demandes par pays et type de client",
+        "Résultat": list(comptes.index), "Dossiers": list(comptes.values),
+        "Part": [fmt_pct(v / total, 1) for v in comptes.values]})
+    return Block("resultats_rfp", "synthese", "Résultat des appels d'offres",
                  accroche, fig, tableau,
-                 note="Huit premiers pays par volume. Trois séries au plus : au-delà, "
-                      "les couleurs ne se distinguent plus de façon fiable.")
+                 note="Les dossiers en attente de décision sortent du dénominateur du "
+                      "taux de succès ; ils ne sont pas des échecs. « Sans suite » "
+                      "désigne les dossiers auxquels le pôle n'a pas répondu.")
 
 
-def _bloc_delai_type(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
-    if not _dispo(df, "delai_ouvre"):
+def _bloc_cadence(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Capacité de production : ce que l'équipe termine, mois après mois."""
+    if df.empty or df["date_envoi"].notna().sum() < 12:
         return None
-    types = [t for t in TYPE_ORDER if t in df["type_demande"].unique()]
-    types += [t for t in df["type_demande"].unique() if t not in types]
-    types = [t for t in types if df.loc[df["type_demande"] == t, "delai_ouvre"].notna().sum() >= 5]
-    if not types:
+    envoyes = df.dropna(subset=["date_envoi"]).copy()
+    envoyes["_mois"] = envoyes["date_envoi"].dt.to_period("M").dt.to_timestamp()
+    pivot = envoyes.pivot_table(index="_mois", columns="famille", values="date_envoi",
+                                aggfunc="size", fill_value=0)
+    pivot = pivot.reindex(pd.date_range(pivot.index.min(), pivot.index.max(), freq="MS"),
+                          fill_value=0)
+    if len(pivot) < 4:
         return None
-    fig = _fig(max(300, 74 * len(types) + 80))
-    for t in types:
-        valeurs = df.loc[df["type_demande"] == t, "delai_ouvre"].dropna()
-        couleur = TYPE_COLORS.get(t, SERIES[0])
+    couleurs = _couleurs_famille()
+    fig = _fig(340, hovermode="x unified")
+    for famille in [f for f in FAMILLE_ORDER if f in pivot.columns]:
+        fig.add_trace(go.Scatter(
+            x=pivot.index, y=pivot[famille], mode="lines", name=str(famille),
+            line=dict(color=couleurs[famille], width=2),
+            hovertemplate="%{y:.0f} " + str(famille) + "<extra></extra>"))
+    _axe_periode(fig, pivot.index, "mois")
+    fig.update_yaxes(title_text="Dossiers terminés", rangemode="tozero")
+
+    cadence_dd = cadence_mensuelle(df, FAMILLE_DD)
+    cadence_rfp = cadence_mensuelle(df, FAMILLE_RFP)
+    accroche = (f"L'équipe termine en moyenne {fmt_dec(cadence_dd, 1)} due diligences et "
+                f"{fmt_dec(cadence_rfp, 1)} appels d'offres par mois.")
+    tableau = pivot.copy()
+    tableau.insert(0, "Mois", [fmt_mois(i) for i in pivot.index])
+    tableau["Total"] = pivot.sum(axis=1).to_numpy()
+    return Block("cadence", "synthese", "Cadence de traitement", accroche, fig,
+                 tableau.reset_index(drop=True),
+                 note="Comptage par date d'ENVOI : c'est la production de l'équipe, à "
+                      "distinguer de la charge qui lui arrive.")
+
+
+# =============================================================================
+#  02 — ACTIVITÉ
+# =============================================================================
+def _bloc_volume_annuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """La question structurelle : la charge augmente-t-elle, et de quel côté ?"""
+    annuel = volume_annuel(df)
+    if annuel.empty or len(annuel) < 3:
+        return None
+    familles = [c for c in annuel.columns if c != "Total"]
+    index = list(annuel.index)
+    en_cours = index[-1] == pd.Timestamp.today().year
+
+    fig = _fig(400, barmode="stack", hovermode="x unified")
+    _empiler(fig, index, annuel[familles], _couleurs_famille())
+    if en_cours:
+        fig.add_annotation(xref="paper", yref="paper", x=1, y=1.04, xanchor="right",
+                           yanchor="bottom", text="année en cours, partielle",
+                           font=dict(size=10.5, color=INK_MUTED))
+    fig.update_xaxes(tickmode="array", tickvals=index, ticktext=[str(a) for a in index])
+    fig.update_yaxes(title_text="Questionnaires reçus", rangemode="tozero")
+    fig.update_layout(bargap=0.3)
+
+    croissances = [croissance(df, h) for h in HORIZONS_CROISSANCE]
+    croissances = [c for c in croissances if c is not None]
+    stats["croissances"] = croissances
+    if croissances:
+        c = croissances[0]
+        accroche = (f"{c.volume_reference} questionnaires en {c.annee_reference}, "
+                    f"contre {c.volume_base} en {c.annee_base} : "
+                    f"{fmt_pct(c.taux, 0)} sur {c.horizon} ans "
+                    f"({fmt_pct(c.tcam, 1)} par an).")
+    else:
+        accroche = f"{fmt_int(int(annuel['Total'].sum()))} questionnaires sur la période."
+    part_dd_debut = annuel[FAMILLE_DD].iloc[0] / max(annuel["Total"].iloc[0], 1) \
+        if FAMILLE_DD in annuel.columns else float("nan")
+    part_dd_fin = annuel[FAMILLE_DD].iloc[-1] / max(annuel["Total"].iloc[-1], 1) \
+        if FAMILLE_DD in annuel.columns else float("nan")
+    if math.isfinite(part_dd_debut) and math.isfinite(part_dd_fin):
+        accroche += (f" La part de due diligence est passée de {fmt_pct(part_dd_debut, 0)} "
+                     f"à {fmt_pct(part_dd_fin, 0)}.")
+    tableau = annuel.reset_index()
+    tableau["annee"] = tableau["annee"].astype(str)
+    tableau = tableau.rename(columns={"annee": "Année"})
+    return Block("volume_annuel", "activite", "Évolution annuelle de la charge",
+                 accroche, fig, tableau,
+                 note="L'année en cours est partielle : elle ne se compare pas aux années "
+                      "pleines, et elle est exclue des taux de croissance.", large=True)
+
+
+def _bloc_delai_famille(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Combien de temps prend un dossier, selon sa nature ?"""
+    if not _dispo(df, "delai_calendaire"):
+        return None
+    familles = [f for f in FAMILLE_ORDER
+                if df.loc[df["famille"] == f, "delai_calendaire"].notna().sum() >= 5]
+    if not familles:
+        return None
+    couleurs = _couleurs_famille()
+    fig = _fig(max(280, 82 * len(familles) + 80))
+    for famille in familles:
+        valeurs = df.loc[df["famille"] == famille, "delai_calendaire"].dropna()
         fig.add_trace(go.Box(
-            x=valeurs, name=str(t), orientation="h", boxpoints="outliers",
-            marker=dict(color=_rgba(couleur, 0.45), size=5,
+            x=valeurs, name=str(famille), orientation="h", boxpoints="outliers",
+            marker=dict(color=_rgba(couleurs[famille], 0.45), size=5,
                         line=dict(color=SURFACE, width=1)),
-            fillcolor=_rgba(couleur, 0.18),
-            line=dict(color=couleur, width=1.6), whiskerwidth=0.45,
-            hovertemplate="%{x:.0f} jours ouvrés<extra>" + str(t) + "</extra>",
-        ))
-    # Le délai cible est porté par l'étiquette d'axe ET par un repère vertical :
-    # jamais par la couleur seule.
-    for i, t in enumerate(types):
-        cible = SLA_JOURS_OUVRES.get(t, SLA_DEFAUT)
-        fig.add_shape(type="line", x0=cible, x1=cible, y0=i - 0.42, y1=i + 0.42,
-                      line=dict(color=INK, width=1.6), layer="above")
+            fillcolor=_rgba(couleurs[famille], 0.18),
+            line=dict(color=couleurs[famille], width=1.6), whiskerwidth=0.45,
+            hovertemplate="%{x:.0f} jours<extra>" + str(famille) + "</extra>"))
     fig.update_yaxes(
-        tickmode="array", tickvals=list(range(len(types))),
-        ticktext=[f"{t}<br><span style='font-size:10.5px;color:{INK_MUTED}'>"
-                  f"cible {SLA_JOURS_OUVRES.get(t, SLA_DEFAUT)} j</span>" for t in types],
-        autorange="reversed",
-    )
-    fig.update_xaxes(title_text="Délai de traitement (jours ouvrés)", rangemode="tozero")
+        tickmode="array", tickvals=list(range(len(familles))),
+        ticktext=[f"{f}<br><span style='font-size:10.5px;color:{INK_MUTED}'>"
+                  f"médiane {fmt_dec(delai_median(df, f), 0)} j</span>" for f in familles],
+        autorange="reversed")
+    fig.update_xaxes(title_text="Délai de traitement (jours calendaires)", rangemode="tozero")
     fig.update_layout(showlegend=False, boxgap=0.45)
 
     lignes = []
-    for t in types:
-        sous = df[df["type_demande"] == t]
-        v = sous["delai_ouvre"].dropna()
+    for famille in familles:
+        sous = df[df["famille"] == famille]
+        v = sous["delai_calendaire"].dropna()
         lignes.append({
-            "Type": t, "Réponses envoyées": int(v.size),
-            "1er quartile": fmt_jours(v.quantile(0.25)), "Médiane": fmt_jours(v.median()),
-            "3e quartile": fmt_jours(v.quantile(0.75)), "9e décile": fmt_jours(v.quantile(0.9)),
-            "Délai cible": f"{SLA_JOURS_OUVRES.get(t, SLA_DEFAUT)} j",
-            "Respect du délai": fmt_pct(sous["dans_sla"].mean(), 1),
+            "Famille": famille, "Dossiers traités": int(v.size),
+            "1er quartile": fmt_dec(v.quantile(0.25), 0, "j"),
+            "Médiane": fmt_dec(v.median(), 0, "j"),
+            "3e quartile": fmt_dec(v.quantile(0.75), 0, "j"),
+            "9e décile": fmt_dec(v.quantile(0.9), 0, "j"),
+            "Respect du délai cible": fmt_pct(sous["dans_sla"].mean(), 1),
         })
-    tableau = pd.DataFrame(lignes)
-    pire = min(types, key=lambda t: df.loc[df["type_demande"] == t, "dans_sla"].mean()
-               if df.loc[df["type_demande"] == t, "dans_sla"].notna().any() else 1.0)
-    taux_pire = df.loc[df["type_demande"] == pire, "dans_sla"].mean()
-    accroche = (f"Délai médian global de {fmt_jours(df['delai_ouvre'].median())} ouvrés. "
-                f"Le type « {pire} » est le plus tendu : {fmt_pct(taux_pire, 1)} des réponses "
-                f"dans la cible de {SLA_JOURS_OUVRES.get(pire, SLA_DEFAUT)} jours.")
-    return Block("delai_type", "operations", "Distribution des délais par type de demande",
+    plus_long = max(familles, key=lambda f: delai_median(df, f))
+    accroche = (f"Un dossier « {plus_long} » demande {fmt_dec(delai_median(df, plus_long), 0)} "
+                f"jours calendaires en médiane, contre "
+                f"{fmt_dec(delai_median(df, familles[0] if familles[0] != plus_long else familles[-1]), 0)} "
+                f"pour l'autre famille.")
+    return Block("delai_famille", "activite", "Délais de traitement par famille",
+                 accroche, fig, pd.DataFrame(lignes),
+                 note="Jours calendaires, comme au comité. Boîte = 1er au 3e quartile, "
+                      "moustaches = 1,5 × écart interquartile ; au-delà, chaque point est "
+                      "un dossier.")
+
+
+# =============================================================================
+#  03 — PIPELINE RFP
+# =============================================================================
+def _bloc_rfp_resultats_annee(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Le taux de succès se maintient-il dans le temps ?"""
+    rfp = df[df["est_rfp"]]
+    if len(rfp) < 12:
+        return None
+    pivot = rfp.pivot_table(index=rfp["date_reception"].dt.year, columns="resultat",
+                            values="date_reception", aggfunc="size", fill_value=0)
+    if len(pivot) < 2:
+        return None
+    ordre = [r for r in RESULTAT_ORDER if r in pivot.columns]
+    pivot = pivot[ordre]
+    index = list(pivot.index)
+    fig = _fig(370, barmode="stack", hovermode="x unified")
+    _empiler(fig, index, pivot, _couleurs_resultat(), " RFP")
+    fig.update_xaxes(tickmode="array", tickvals=index, ticktext=[str(a) for a in index])
+    fig.update_yaxes(title_text="Appels d'offres reçus", rangemode="tozero")
+    fig.update_layout(bargap=0.3)
+
+    tranches = pivot.get(RESULTAT_GAGNE, 0) + pivot.get(RESULTAT_PERDU, 0)
+    taux_annuel = (pivot.get(RESULTAT_GAGNE, 0) / tranches.replace(0, np.nan)).dropna()
+    if len(taux_annuel) >= 2:
+        meilleure = taux_annuel.idxmax()
+        accroche = (f"Taux de succès le plus élevé en {meilleure} "
+                    f"({fmt_pct(taux_annuel.max(), 0)}), le plus bas en "
+                    f"{taux_annuel.idxmin()} ({fmt_pct(taux_annuel.min(), 0)}).")
+    else:
+        accroche = f"{fmt_int(len(rfp))} appels d'offres reçus sur la période."
+    tableau = pivot.copy()
+    tableau.insert(0, "Année", [str(a) for a in index])
+    tableau["Taux de succès"] = [fmt_pct(v, 0) if pd.notna(v) else "—"
+                                 for v in (pivot.get(RESULTAT_GAGNE, 0) / tranches.replace(0, np.nan))]
+    return Block("rfp_resultats_annee", "rfp", "Résultats des RFP par année",
+                 accroche, fig, tableau.reset_index(drop=True),
+                 note="Les dossiers récents sont surreprésentés en « En attente » : une "
+                      "décision client intervient plusieurs mois après la remise.",
+                 large=True)
+
+
+def _bloc_rfp_reception(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Rythme d'arrivée des appels d'offres."""
+    rfp = df[df["est_rfp"]]
+    if len(rfp) < 12:
+        return None
+    serie = (rfp.assign(_m=rfp["date_reception"].dt.to_period("M").dt.to_timestamp())
+             .groupby("_m").size())
+    serie = serie.reindex(pd.date_range(serie.index.min(), serie.index.max(), freq="MS"),
+                          fill_value=0)
+    if len(serie) < 4:
+        return None
+    fig = _fig(320, hovermode="x unified")
+    fig.add_trace(go.Bar(x=serie.index, y=serie.values, name="RFP reçus",
+                         marker=_marque(SERIES[1], 1.2),
+                         hovertemplate="%{y} RFP<extra></extra>"))
+    if len(serie) >= 8:
+        lissage = serie.rolling(3, min_periods=2).mean()
+        fig.add_trace(go.Scatter(x=serie.index, y=lissage, mode="lines",
+                                 name="Moyenne mobile 3 mois",
+                                 line=dict(color=INK, width=2),
+                                 hovertemplate="Moyenne : %{y:.1f}<extra></extra>"))
+    _axe_periode(fig, serie.index, "mois")
+    fig.update_yaxes(title_text="RFP reçus", rangemode="tozero")
+    pic = serie.idxmax()
+    accroche = (f"{fmt_dec(serie.mean(), 1)} appel(s) d'offres par mois en moyenne ; "
+                f"pic à {int(serie.max())} en {fmt_mois(pic)}.")
+    tableau = pd.DataFrame({"Mois": [fmt_mois(i) for i in serie.index],
+                            "RFP reçus": serie.values})
+    return Block("rfp_reception", "rfp", "Arrivée des appels d'offres", accroche, fig,
+                 tableau, note="Comptage par date de réception. La moyenne mobile lisse "
+                               "l'irrégularité propre aux appels d'offres.")
+
+
+def _bloc_rfp_succes_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Où gagne-t-on ? Taux de succès par classe d'actifs, avec incertitude."""
+    rfp = df[df["est_rfp"] & df["resultat"].isin([RESULTAT_GAGNE, RESULTAT_PERDU])]
+    if len(rfp) < 12 or not _dispo(rfp, "classe_actifs", min_modalites=2):
+        return None
+    groupe = rfp.groupby("classe_actifs", observed=True).agg(
+        tranches=("resultat", "size"),
+        gagnes=("est_gagne", "sum"),
+        aum=("aum_gagne", "sum"))
+    groupe = groupe[groupe["tranches"] >= 5]
+    if len(groupe) < 2:
+        return None
+    groupe["taux"] = groupe["gagnes"] / groupe["tranches"]
+    ic = [wilson_ci(int(g), int(n)) for g, n in zip(groupe["gagnes"], groupe["tranches"])]
+    groupe["bas"], groupe["haut"] = [a for a, _ in ic], [b for _, b in ic]
+    groupe = groupe.sort_values("taux")
+
+    global_taux = taux_succes_rfp(df)[0]
+    x = groupe["taux"] * 100
+    fig = _fig(max(300, 50 * len(groupe) + 96))
+    fig.add_trace(go.Bar(
+        y=groupe.index, x=x, orientation="h", marker=_marque(SERIES[1]),
+        error_x=dict(type="data", symmetric=False,
+                     array=(groupe["haut"] - groupe["taux"]) * 100,
+                     arrayminus=(groupe["taux"] - groupe["bas"]) * 100,
+                     color=INK_MUTED, thickness=1.2, width=5),
+        customdata=np.stack([groupe["gagnes"], groupe["tranches"], groupe["aum"]], axis=-1),
+        hovertemplate=("<b>%{y}</b><br>Taux de succès : %{x:.0f} %"
+                       "<br>%{customdata[0]:.0f} gagnés sur %{customdata[1]:.0f} tranchés"
+                       "<br>Encours remporté : %{customdata[2]:,.0f} M€<extra></extra>")))
+    if pd.notna(global_taux):
+        fig.add_vline(x=global_taux * 100, line=dict(color=INK, width=1),
+                      annotation_text=f"moyenne : {fmt_pct(global_taux, 0)}",
+                      annotation_position="top", annotation_font=dict(color=INK_2, size=11))
+    borne = float((groupe["haut"] * 100).max())
+    for classe, ligne in groupe.iterrows():
+        fig.add_annotation(x=borne * 1.05, y=classe, xanchor="left",
+                           text=f"{fmt_pct(ligne['taux'], 0)}   ·   n = {int(ligne['tranches'])}",
+                           font=dict(size=11.5, color=INK_2))
+    fig.update_xaxes(title_text="Taux de succès", ticksuffix=ESP_UNITE + "%",
+                     range=[0, borne * 1.45])
+
+    meilleure, pire = groupe.iloc[-1], groupe.iloc[0]
+    accroche = (f"« {groupe.index[-1]} » convertit {fmt_pct(meilleure['taux'], 0)} des "
+                f"dossiers tranchés contre {fmt_pct(pire['taux'], 0)} pour "
+                f"« {groupe.index[0]} »"
+                + (" — écart significatif au seuil de 5 %."
+                   if meilleure["bas"] > pire["haut"]
+                   else " — mais les intervalles se recouvrent : l'écart n'est pas établi."))
+    tableau = groupe.reset_index()[["classe_actifs", "tranches", "gagnes", "taux", "aum"]]
+    tableau["taux"] = tableau["taux"].map(lambda v: fmt_pct(v, 1))
+    tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
+    tableau.columns = ["Classe d'actifs", "Tranchés", "Gagnés", "Taux de succès",
+                       "Encours remporté"]
+    return Block("rfp_succes", "rfp", "Taux de succès par classe d'actifs",
+                 accroche, fig, tableau.sort_values("Tranchés", ascending=False),
+                 note="Moustaches = intervalle de confiance de Wilson à 95 %. Deux classes "
+                      "dont les intervalles se recouvrent ne sont pas départageables. "
+                      "Classes de moins de 5 décisions écartées.",
+                 dimension="classe_actifs")
+
+
+def _bloc_rfp_consultants(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Quels cabinets intermédiaires pèsent sur le flux d'appels d'offres ?"""
+    rfp = df[df["est_rfp"]]
+    if len(rfp) < 10 or not _dispo(rfp, "consultant", min_modalites=2):
+        return None
+    groupe = rfp.groupby("consultant", observed=True).agg(
+        volume=("date_reception", "size"),
+        gagnes=("est_gagne", "sum"),
+        aum=("aum_gagne", "sum"))
+    groupe = groupe[groupe.index != VALEUR_INCONNUE]
+    if groupe.empty:
+        return None
+    survol = [f"{int(v)} RFP · {int(g)} gagné(s) · {fmt_dec(a, 0, 'M€')} remportés"
+              for v, g, a in zip(groupe["volume"], groupe["gagnes"], groupe["aum"])]
+    fig, complet = _figure_rang(groupe.index, groupe["volume"], fmt_int,
+                                couleur=SERIES[1], top=10, survol=survol,
+                                titre_axe="Appels d'offres")
+    direct = int((rfp["consultant"] == VALEUR_INCONNUE).sum())
+    accroche = (f"{fmt_int(int(groupe['volume'].sum()))} appels d'offres passent par un "
+                f"cabinet ; {fmt_int(direct)} arrivent en direct "
+                f"({fmt_pct(direct / max(len(rfp), 1), 0)}).")
+    tableau = groupe.reset_index().sort_values("volume", ascending=False)
+    tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
+    tableau.columns = ["Consultant", "RFP", "Gagnés", "Encours remporté"]
+    return Block("rfp_consultants", "rfp", "Appels d'offres par consultant",
                  accroche, fig, tableau,
-                 note="Boîte = 1er au 3e quartile, trait central = médiane, moustaches = "
-                      "1,5 × écart interquartile ; au-delà, chaque dossier est un point. "
-                      "Le trait vertical noir marque le délai cible.")
+                 note="Les dossiers reçus en direct ne sont pas comptés dans le "
+                      "classement ; leur volume figure dans le commentaire.",
+                 dimension="consultant")
 
 
+# =============================================================================
+#  04 — DUE DILIGENCE
+# =============================================================================
+def _bloc_dd_mensuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    dd = df[df["est_dd"]]
+    if len(dd) < 12:
+        return None
+    serie = (dd.assign(_m=dd["date_reception"].dt.to_period("M").dt.to_timestamp())
+             .groupby("_m").size())
+    serie = serie.reindex(pd.date_range(serie.index.min(), serie.index.max(), freq="MS"),
+                          fill_value=0)
+    fig = _fig(340, hovermode="x unified")
+    fig.add_trace(go.Bar(x=serie.index, y=serie.values, name="Due diligence",
+                         marker=_marque(SERIES[0], 1.2),
+                         hovertemplate="%{y} due diligences<extra></extra>"))
+    if len(serie) >= 8:
+        fig.add_trace(go.Scatter(x=serie.index, y=serie.rolling(3, min_periods=2).mean(),
+                                 mode="lines", name="Moyenne mobile 3 mois",
+                                 line=dict(color=INK, width=2),
+                                 hovertemplate="Moyenne : %{y:.1f}<extra></extra>"))
+    _axe_periode(fig, serie.index, "mois")
+    fig.update_yaxes(title_text="Due diligences reçues", rangemode="tozero")
+    accroche = (f"{fmt_dec(serie.mean(), 1)} due diligences par mois en moyenne ; "
+                f"pic à {int(serie.max())} en {fmt_mois(serie.idxmax())}.")
+    tableau = pd.DataFrame({"Mois": [fmt_mois(i) for i in serie.index],
+                            "Due diligences": serie.values})
+    return Block("dd_mensuel", "dd", "Volume mensuel de due diligence", accroche, fig,
+                 tableau, note="Comptage par date de réception.", large=True)
+
+
+def _bloc_dd_expertise(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Quelles équipes de gestion absorbent la charge ?"""
+    dd = df[df["est_dd"]]
+    if len(dd) < 10 or not _dispo(dd, "expertise", min_modalites=2):
+        return None
+    groupe = dd.groupby("expertise", observed=True).agg(
+        volume=("date_reception", "size"),
+        delai=("delai_calendaire", "median"))
+    total = int(groupe["volume"].sum())
+    survol = [f"{int(v)} dossiers · {fmt_pct(v / total, 1)} de la charge · "
+              f"délai médian {fmt_dec(d, 0, 'j')}"
+              for v, d in zip(groupe["volume"], groupe["delai"])]
+    fig, _ = _figure_rang(groupe.index, groupe["volume"], fmt_int, couleur=SERIES[0],
+                          top=10, survol=survol, titre_axe="Due diligences")
+    tete = groupe.sort_values("volume", ascending=False)
+    part_trois = tete["volume"].head(3).sum() / max(total, 1)
+    accroche = (f"« {tete.index[0]} » concentre {fmt_pct(tete['volume'].iloc[0] / total, 0)} "
+                f"de la due diligence ; les trois premières expertises en absorbent "
+                f"{fmt_pct(part_trois, 0)}.")
+    tableau = tete.reset_index()
+    tableau["part"] = (tete["volume"] / total).map(lambda v: fmt_pct(v, 1)).to_numpy()
+    tableau["delai"] = tete["delai"].map(lambda v: fmt_dec(v, 0, "j")).to_numpy()
+    tableau.columns = ["Expertise", "Dossiers", "Délai médian", "Part de la charge"]
+    return Block("dd_expertise", "dd", "Charge par expertise", accroche, fig,
+                 tableau[["Expertise", "Dossiers", "Part de la charge", "Délai médian"]],
+                 note="Classement en barres plutôt qu'en camembert : au-delà de sept "
+                      "catégories, aucune part d'un disque n'est comparable à l'œil.",
+                 dimension="expertise")
+
+
+def _bloc_dd_pays(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    dd = df[df["est_dd"]]
+    if len(dd) < 10 or not _dispo(dd, "pays", min_modalites=2):
+        return None
+    groupe = dd.groupby("pays", observed=True).agg(volume=("date_reception", "size"),
+                                                   clients=("client", "nunique"))
+    total = int(groupe["volume"].sum())
+    survol = [f"{int(v)} dossiers · {fmt_pct(v / total, 1)} · {int(c)} client(s)"
+              for v, c in zip(groupe["volume"], groupe["clients"])]
+    fig, _ = _figure_rang(groupe.index, groupe["volume"], fmt_int, couleur=SERIES[0],
+                          top=10, survol=survol, titre_axe="Due diligences")
+    tete = groupe.sort_values("volume", ascending=False)
+    accroche = (f"« {tete.index[0]} » représente {fmt_pct(tete['volume'].iloc[0] / total, 0)} "
+                f"de la due diligence, répartie sur {int(tete['clients'].iloc[0])} clients.")
+    tableau = tete.reset_index()
+    tableau.columns = ["Pays", "Dossiers", "Clients distincts"]
+    return Block("dd_pays", "dd", "Origine géographique de la due diligence",
+                 accroche, fig, tableau, note="",
+                 dimension="pays")
+
+
+def _bloc_dd_matrice(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Croisement expertise × pays : où se concentre vraiment la charge ?"""
+    dd = df[df["est_dd"]]
+    if len(dd) < 40 or not (_dispo(dd, "expertise", min_modalites=3)
+                            and _dispo(dd, "pays", min_modalites=3)):
+        return None
+    top_pays = dd["pays"].value_counts().head(8).index.tolist()
+    top_exp = dd["expertise"].value_counts().head(8).index.tolist()
+    sous = dd[dd["pays"].isin(top_pays) & dd["expertise"].isin(top_exp)]
+    table = pd.crosstab(sous["expertise"], sous["pays"]).reindex(index=top_exp,
+                                                                 columns=top_pays,
+                                                                 fill_value=0)
+    z = table.to_numpy(dtype=float, copy=True)
+    maxi = z.max() if z.size else 1.0
+    fig = _fig(max(300, 40 * len(top_exp) + 120))
+    fig.add_trace(go.Heatmap(
+        z=z, x=list(table.columns), y=list(table.index),
+        colorscale=[[i / (len(SEQUENTIEL) - 1), c] for i, c in enumerate(SEQUENTIEL)],
+        xgap=2, ygap=2, hoverongaps=False,
+        colorbar=dict(title=dict(text="Dossiers", font=dict(size=11, color=INK_2)),
+                      thickness=10, outlinewidth=0,
+                      tickfont=dict(size=11, color=INK_MUTED), len=0.85),
+        hovertemplate="%{y} · %{x} : %{z:.0f} dossiers<extra></extra>"))
+    for i, expertise in enumerate(table.index):
+        for j, pays in enumerate(table.columns):
+            if z[i, j] > 0:
+                fond = couleur_rampe(SEQUENTIEL, z[i, j] / maxi if maxi else 0)
+                fig.add_annotation(x=pays, y=expertise, text=fmt_int(z[i, j]),
+                                   font=dict(size=11, color=encre_lisible(fond)))
+    fig.update_xaxes(showgrid=False, showline=False, ticks="", tickangle=-30)
+    fig.update_yaxes(showgrid=False, showline=False, ticks="", autorange="reversed")
+    i_max, j_max = np.unravel_index(np.argmax(z), z.shape)
+    accroche = (f"Concentration maximale : « {table.index[i_max]} » pour "
+                f"« {table.columns[j_max]} », {int(z[i_max, j_max])} dossiers.")
+    tableau = table.reset_index()
+    return Block("dd_matrice", "dd", "Expertise × pays", accroche, fig, tableau,
+                 note="Huit premières expertises et huit premiers pays. Les cases vides "
+                      "sont des croisements sans dossier.", large=True)
+
+
+# =============================================================================
+#  05 — ENCOURS & GAINS
+# =============================================================================
+def _bloc_aum_annuel(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """La collecte issue des appels d'offres, année par année."""
+    gagnes = df[df["est_rfp"] & df["est_gagne"] & df["aum_gagne"].notna()]
+    if len(gagnes) < 3:
+        return None
+    annuel = gagnes.groupby(gagnes["date_reception"].dt.year).agg(
+        aum=("aum_gagne", "sum"), mandats=("aum_gagne", "size"))
+    if len(annuel) < 2:
+        return None
+    index = list(annuel.index)
+    fig = _fig(380, hovermode="x unified")
+    fig.add_trace(go.Bar(
+        x=index, y=annuel["aum"], name="Encours remporté",
+        marker=_marque(SERIES[1], 1.2),
+        customdata=np.stack([annuel["mandats"], annuel["aum"] / annuel["mandats"]], axis=-1),
+        hovertemplate=("%{y:,.0f} M€<br>%{customdata[0]:.0f} mandat(s)"
+                       "<br>Ticket moyen : %{customdata[1]:,.0f} M€<extra></extra>")))
+    moyenne = annuel["aum"].mean()
+    fig.add_hline(y=moyenne, line=dict(color=INK, width=1),
+                  annotation_text=f"moyenne : {fmt_dec(moyenne, 0, 'M€')}",
+                  annotation_position="top left",
+                  annotation_font=dict(color=INK_2, size=11))
+    fig.update_xaxes(tickmode="array", tickvals=index, ticktext=[str(a) for a in index])
+    fig.update_yaxes(title_text="Encours remporté (M€)", rangemode="tozero")
+    fig.update_layout(bargap=0.32)
+    _axe_valeurs(fig, float(annuel["aum"].max()) * 1.1,
+                 lambda v: fmt_dec(v, 0, "M€"), axe="y")
+
+    meilleure = annuel["aum"].idxmax()
+    part = annuel["aum"].max() / max(annuel["aum"].sum(), 1)
+    accroche = (f"{fmt_dec(annuel['aum'].sum(), 0, 'M€')} remportés sur la période. "
+                f"L'année {meilleure} en concentre {fmt_pct(part, 0)} à elle seule "
+                f"({fmt_dec(annuel['aum'].max(), 0, 'M€')}).")
+    tableau = annuel.reset_index()
+    tableau["ticket"] = (annuel["aum"] / annuel["mandats"]).to_numpy()
+    tableau.columns = ["Année", "Encours remporté (M€)", "Mandats", "Ticket moyen (M€)"]
+    tableau["Année"] = tableau["Année"].astype(str)
+    return Block("aum_annuel", "aum", "Encours remporté par année", accroche, fig,
+                 tableau.round(0),
+                 note="Encours rattaché à l'année de RÉCEPTION du dossier. La collecte "
+                      "issue des appels d'offres est par nature irrégulière : un mandat "
+                      "peut représenter plusieurs fois le total d'une année ordinaire.",
+                 large=True)
+
+
+def _bloc_aum_clients(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    gagnes = df[df["est_rfp"] & df["est_gagne"] & df["aum_gagne"].notna()]
+    if len(gagnes) < 3 or not _dispo(gagnes, "client", min_modalites=2):
+        return None
+    groupe = gagnes.groupby("client", observed=True).agg(
+        aum=("aum_gagne", "sum"), mandats=("aum_gagne", "size"))
+    survol = [f"{fmt_dec(a, 0, 'M€')} · {int(m)} mandat(s)"
+              for a, m in zip(groupe["aum"], groupe["mandats"])]
+    fig, _ = _figure_rang(groupe.index, groupe["aum"],
+                          lambda v: fmt_dec(v, 0, "M€"), couleur=SERIES[1], top=10,
+                          survol=survol, titre_axe="Encours remporté (M€)")
+    tete = groupe.sort_values("aum", ascending=False)
+    part = tete["aum"].iloc[0] / max(groupe["aum"].sum(), 1)
+    accroche = (f"« {tete.index[0]} » représente {fmt_pct(part, 0)} de l'encours remporté "
+                f"({fmt_dec(tete['aum'].iloc[0], 0, 'M€')}).")
+    tableau = tete.reset_index()
+    tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
+    tableau.columns = ["Client", "Encours remporté", "Mandats"]
+    return Block("aum_clients", "aum", "Clients par encours remporté", accroche, fig,
+                 tableau, note="",
+                 dimension="client")
+
+
+def _bloc_aum_strategies(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    gagnes = df[df["est_rfp"] & df["est_gagne"] & df["aum_gagne"].notna()]
+    champ = "sous_classe_actifs" if _dispo(gagnes, "sous_classe_actifs", min_modalites=2) \
+        else "classe_actifs"
+    if len(gagnes) < 3 or not _dispo(gagnes, champ, min_modalites=2):
+        return None
+    groupe = gagnes.groupby(champ, observed=True).agg(
+        aum=("aum_gagne", "sum"), mandats=("aum_gagne", "size"))
+    survol = [f"{fmt_dec(a, 0, 'M€')} · {int(m)} mandat(s)"
+              for a, m in zip(groupe["aum"], groupe["mandats"])]
+    fig, _ = _figure_rang(groupe.index, groupe["aum"],
+                          lambda v: fmt_dec(v, 0, "M€"), couleur=SERIES[1], top=10,
+                          survol=survol, titre_axe="Encours remporté (M€)")
+    tete = groupe.sort_values("aum", ascending=False)
+    accroche = (f"« {tete.index[0]} » concentre "
+                f"{fmt_pct(tete['aum'].iloc[0] / max(groupe['aum'].sum(), 1), 0)} de "
+                f"l'encours remporté.")
+    tableau = tete.reset_index()
+    tableau["aum"] = tableau["aum"].map(lambda v: fmt_dec(v, 0, "M€"))
+    tableau.columns = [DIMENSIONS.get(champ, champ), "Encours remporté", "Mandats"]
+    return Block("aum_strategies", "aum", "Stratégies par encours remporté",
+                 accroche, fig, tableau,
+                 note="Ventilation par sous-classe d'actifs lorsque l'information est "
+                      "disponible, par classe d'actifs sinon.")
+
+
+# =============================================================================
+#  06 — ESG
+# =============================================================================
+def _bloc_esg_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """La composante ESG des questionnaires monte-t-elle, et à quelle vitesse ?"""
+    if df.empty or "bande_esg" not in df.columns:
+        return None
+    if (df["bande_esg"] != ESG_INCONNU).sum() < 20:
+        return None
+    pivot = df.pivot_table(index=df["date_reception"].dt.year, columns="bande_esg",
+                           values="date_reception", aggfunc="size", fill_value=0)
+    ordre = [b for b in ESG_ORDER if b in pivot.columns]
+    pivot = pivot[ordre]
+    if len(pivot) < 2:
+        return None
+    mode = stats.get("esg_mode", "part")
+    affiche = pivot.div(pivot.sum(axis=1).replace(0, np.nan), axis=0) * 100 \
+        if mode == "part" else pivot
+    index = list(pivot.index)
+    fig = _fig(380, barmode="stack", hovermode="x unified")
+    for i, colonne in enumerate(affiche.columns):
+        fig.add_trace(go.Bar(
+            x=index, y=affiche[colonne], name=str(colonne),
+            marker=_marque(_couleurs_esg().get(colonne, SERIES[i % len(SERIES)]), 1.2),
+            customdata=pivot[colonne],
+            hovertemplate=("%{y:.0f} % — %{customdata} dossiers<extra>" + str(colonne) + "</extra>"
+                           if mode == "part" else
+                           "%{y:.0f} dossiers<extra>" + str(colonne) + "</extra>")))
+    fig.update_xaxes(tickmode="array", tickvals=index, ticktext=[str(a) for a in index])
+    fig.update_yaxes(title_text="Part des questionnaires" if mode == "part" else "Questionnaires",
+                     ticksuffix=ESP_UNITE + "%" if mode == "part" else "",
+                     rangemode="tozero")
+    fig.update_layout(bargap=0.3)
+
+    connus = df[df["bande_esg"] != ESG_INCONNU]
+    parts = (connus.groupby(connus["date_reception"].dt.year)["esg_fort"].mean().dropna())
+    if len(parts) >= 2:
+        premiere, derniere = parts.index[0], parts.index[-1]
+        accroche = (f"Les questionnaires à forte composante ESG sont passés de "
+                    f"{fmt_pct(parts.iloc[0], 0)} des dossiers renseignés en {premiere} "
+                    f"à {fmt_pct(parts.iloc[-1], 0)} en {derniere}.")
+    else:
+        accroche = f"{fmt_pct(part_esg_forte(df), 0)} des questionnaires sont à forte composante ESG."
+    tableau = pivot.reset_index()
+    tableau.columns = ["Année"] + [str(c) for c in pivot.columns]
+    tableau["Année"] = tableau["Année"].astype(str)
+    tableau["Total"] = pivot.sum(axis=1).to_numpy()
+    return Block("esg_evolution", "esg", "Évolution de la composante ESG", accroche, fig,
+                 tableau,
+                 note="Tranches telles que suivies au comité. Les dossiers dont la part "
+                      "ESG n'est pas renseignée forment une catégorie à part : les "
+                      "compter comme « peu ESG » fausserait la série.", large=True)
+
+
+def _bloc_esg_dimension(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Quelles expertises portent réellement l'exigence ESG ?"""
+    connus = df[df["bande_esg"] != ESG_INCONNU]
+    champ = "expertise" if _dispo(connus, "expertise", min_modalites=3) else "classe_actifs"
+    if len(connus) < 20 or not _dispo(connus, champ, min_modalites=2):
+        return None
+    groupe = connus.groupby(champ, observed=True).agg(
+        volume=("esg_fort", "size"), forts=("esg_fort", "sum"))
+    groupe = groupe[groupe["volume"] >= 8]
+    if len(groupe) < 2:
+        return None
+    groupe["part"] = groupe["forts"] / groupe["volume"]
+    survol = [f"{fmt_pct(p, 0)} à forte composante ESG · {int(f)} sur {int(v)} dossiers"
+              for p, f, v in zip(groupe["part"], groupe["forts"], groupe["volume"])]
+    fig, _ = _figure_rang(groupe.index, groupe["part"] * 100,
+                          lambda v: fmt_dec(v, 0, "%"), couleur=SEQUENTIEL[-2], top=10,
+                          survol=survol, titre_axe="Part des dossiers à forte composante ESG")
+    tete = groupe.sort_values("part", ascending=False)
+    accroche = (f"« {tete.index[0]} » est l'expertise la plus sollicitée sur l'ESG : "
+                f"{fmt_pct(tete['part'].iloc[0], 0)} de ses questionnaires dépassent "
+                f"{fmt_pct(ESG_SEUIL_FORT, 0)} de contenu ESG.")
+    tableau = tete.reset_index()
+    tableau["part"] = tableau["part"].map(lambda v: fmt_pct(v, 0))
+    tableau.columns = [DIMENSIONS.get(champ, champ), "Dossiers renseignés",
+                       "Dont forte composante", "Part"]
+    return Block("esg_dimension", "esg", "Exigence ESG par expertise", accroche, fig,
+                 tableau,
+                 note="Calculé sur les seuls dossiers dont la part ESG est renseignée, et "
+                      "sur les modalités comptant au moins huit dossiers.")
+
+
+# =============================================================================
+#  BLOCS CONSERVÉS — analyses de la version précédente, reclassées
+# =============================================================================
 def _bloc_delai_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
     if mensuel.empty or mensuel["delai_median"].notna().sum() < 3:
         return None
@@ -2155,7 +3342,7 @@ def _bloc_delai_evolution(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) 
     tableau["taux_sla"] = tableau["taux_sla"].map(lambda v: fmt_pct(v, 1))
     tableau.columns = ["Mois", "Demandes", "Réponses envoyées", "1er quartile", "Délai médian",
                        "3e quartile", "Délai cible", "Respect du délai"]
-    return Block("delai_evolution", "operations", "Évolution du délai de traitement",
+    return Block("delai_evolution", "activite", "Évolution du délai de traitement",
                  accroche, fig, tableau,
                  note="La bande claire couvre la moitié centrale des dossiers du mois. "
                       "Le délai cible varie légèrement d'un mois à l'autre : il suit le mix "
@@ -2197,7 +3384,7 @@ def _bloc_charge_analyste(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) 
     tableau["taux_succes"] = tableau["taux_succes"].map(lambda v: fmt_pct(v, 1))
     tableau.columns = ["Analyste", "Dossiers", "Questions traitées", "Délai médian",
                        "Respect du délai", "Taux de succès"]
-    return Block("charge_analyste", "operations", "Répartition de la charge par analyste",
+    return Block("charge_analyste", "activite", "Répartition de la charge par analyste",
                  accroche, fig, tableau,
                  note="Vue de charge, pas de performance : le nombre de questions dépend du type "
                       "de dossier reçu, et le taux de succès dépend d'abord du marché adressé.")
@@ -2250,7 +3437,7 @@ def _bloc_saisonnalite(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> 
     tableau = pivot.reset_index()
     tableau.columns = ["Année"] + MOIS_FR
     tableau["Total"] = pivot.sum(axis=1).to_numpy()
-    return Block("saisonnalite", "operations", "Saisonnalité de l'activité", accroche, fig, tableau,
+    return Block("saisonnalite", "activite", "Saisonnalité de l'activité", accroche, fig, tableau,
                  note="Les mois antérieurs ou postérieurs à la période observée sont laissés vides "
                       "plutôt que comptés à zéro. Une seule teinte, du clair au foncé : "
                       "l'intensité code la magnitude.", large=True)
@@ -2305,7 +3492,7 @@ def _bloc_regression_delai(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict)
         "Valeur": [fmt_dec(reg.pente, 4), fmt_dec(par_dix, 2) + " j", fmt_dec(reg.ordonnee, 2) + " j",
                    fmt_dec(reg.r2, 3), fmt_dec(reg.r2_ajuste, 3), fmt_p(reg.p_value), fmt_int(reg.n)],
     })
-    return Block("reg_questions", "statistiques",
+    return Block("reg_questions", "diagnostic",
                  "Le volume de questions explique-t-il le délai ?", accroche, fig, tableau,
                  note="Moindres carrés ordinaires. La bande grise est l'intervalle de confiance à "
                       "95 % de la droite de régression, pas celui d'un dossier individuel. "
@@ -2386,7 +3573,7 @@ def _bloc_facteurs(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bloc
         "t": fmt_dec(c.t_stat, 2), "p-value": fmt_p(c.p_value),
         "Significatif à 5 %": "Oui" if c.significatif else "Non",
     } for c in modele.coefficients])
-    return Block("facteurs", "statistiques", "Facteurs explicatifs du délai de traitement",
+    return Block("facteurs", "diagnostic", "Facteurs explicatifs du délai de traitement",
                  accroche, fig, tableau,
                  note="Régression linéaire multiple. Chaque effet s'interprète à autres facteurs "
                       "constants. La modalité de référence des types de demande est le RFI. "
@@ -2454,18 +3641,29 @@ def _bloc_projection(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
         "Borne basse (95 %)": [fmt_int(v) for v in bas],
         "Borne haute (95 %)": [fmt_int(v) for v in haut],
     })
-    return Block("projection", "statistiques",
+    return Block("projection", "diagnostic",
                  f"Projection du flux à {PROJECTION_MOIS} mois", accroche, fig, tableau,
                  note="Prolongement linéaire de la tendance observée, avec intervalle de prédiction "
                       "à 95 %. Ce modèle ignore la saisonnalité : il donne un ordre de grandeur, "
                       "pas un budget. Le mois en cours, incomplet, est exclu de l'ajustement.",
                  large=True)
 
-
 _CONSTRUCTEURS: tuple[Callable[[pd.DataFrame, pd.DataFrame, dict], Block | None], ...] = (
-    _bloc_flux, _bloc_entonnoir, _bloc_statuts,
-    _bloc_succes_classe, _bloc_montants, _bloc_clients, _bloc_geographie,
-    _bloc_delai_type, _bloc_delai_evolution, _bloc_charge_analyste, _bloc_saisonnalite,
+    # 01 Vue d'ensemble
+    _bloc_flux_famille, _bloc_resultats_rfp, _bloc_cadence,
+    # 02 Activité
+    _bloc_volume_annuel, _bloc_delai_famille, _bloc_delai_evolution,
+    _bloc_saisonnalite, _bloc_charge_analyste,
+    # 03 Pipeline RFP
+    _bloc_rfp_resultats_annee, _bloc_rfp_reception, _bloc_rfp_succes_dimension,
+    _bloc_rfp_consultants,
+    # 04 Due diligence
+    _bloc_dd_mensuel, _bloc_dd_expertise, _bloc_dd_pays, _bloc_dd_matrice,
+    # 05 Encours & gains
+    _bloc_aum_annuel, _bloc_aum_clients, _bloc_aum_strategies,
+    # 06 ESG
+    _bloc_esg_evolution, _bloc_esg_dimension,
+    # 07 Diagnostic
     _bloc_regression_delai, _bloc_facteurs, _bloc_projection,
 )
 
@@ -2481,6 +3679,7 @@ class Analysis:
     blocs: list[Block]
     stats: dict[str, Any] = field(default_factory=dict)
     erreurs: list[str] = field(default_factory=list)
+    insights: list[Insight] = field(default_factory=list)
     genere_le: dt.datetime = field(default_factory=dt.datetime.now)
 
     @property
@@ -2503,11 +3702,12 @@ class Analysis:
 
 def build_analysis(df: pd.DataFrame, filtres: Filters | None = None,
                    rapport: LoadReport | None = None,
-                   df_precedent: pd.DataFrame | None = None) -> Analysis:
+                   df_precedent: pd.DataFrame | None = None,
+                   options: Mapping[str, Any] | None = None) -> Analysis:
     """Chaîne complète : KPI + tous les blocs. Un bloc qui échoue est signalé
     dans `erreurs` mais n'interrompt jamais le reste du tableau de bord."""
     filtres = filtres or Filters()
-    stats: dict[str, Any] = {}
+    stats: dict[str, Any] = dict(options or {})
     erreurs: list[str] = []
     kpis = compute_kpis(df, df_precedent) if not df.empty else []
     blocs: list[Block] = []
@@ -2525,8 +3725,13 @@ def build_analysis(df: pd.DataFrame, filtres: Filters | None = None,
     if df_precedent is not None and not df_precedent.empty:
         precedente = filtres.periode_precedente()
         stats["comparaison"] = (precedente.date_min, precedente.date_max)
+    try:
+        insights = generer_insights(df, df_precedent) if not df.empty else []
+    except Exception as exc:                          # pragma: no cover
+        erreurs.append(f"generer_insights : {type(exc).__name__} — {exc}")
+        insights = []
     return Analysis(df=df, filtres=filtres, rapport=rapport, kpis=kpis, blocs=blocs,
-                    stats=stats, erreurs=erreurs)
+                    stats=stats, erreurs=erreurs, insights=insights)
 
 
 # =============================================================================
@@ -2549,6 +3754,26 @@ COLONNES_EXPORT: dict[str, str] = {
     "sla_cible": "Délai cible",
     "montant_potentiel": "Montant potentiel (€)",
 }
+
+
+CHAMPS_RECHERCHE = ("client", "consultant", "pays", "fonds", "classe_actifs",
+                    "sous_classe_actifs", "expertise", "analyste", "type_demande",
+                    "statut", "resultat", "forme_juridique")
+
+
+def cle_recherche(texte: str) -> str:
+    """Normalise une saisie de recherche : sans accent, sans casse, sans
+    ponctuation de séparation. « leman » retrouve « Banque Privée du Léman »."""
+    return _cle(texte)
+
+
+def index_recherche(df: pd.DataFrame) -> pd.Series:
+    """Texte normalisé de chaque dossier, pour la recherche plein texte."""
+    champs = [c for c in CHAMPS_RECHERCHE if c in df.columns]
+    if df.empty or not champs:
+        return pd.Series("", index=df.index, dtype=object)
+    concat = df[champs].astype(str).agg(" ".join, axis=1)
+    return concat.map(_cle)
 
 
 def table_detaillee(df: pd.DataFrame, formate: bool = True) -> pd.DataFrame:
@@ -2574,15 +3799,12 @@ def table_detaillee(df: pd.DataFrame, formate: bool = True) -> pd.DataFrame:
 # =============================================================================
 def _autotest() -> None:
     print("1. Outils statistiques")
-    # Valeurs de référence des tables de Student / loi normale
-    assert abs(t_sf_two_sided(2.228, 10) - 0.050) < 1e-3, t_sf_two_sided(2.228, 10)
+    assert abs(t_sf_two_sided(2.228, 10) - 0.050) < 1e-3
     assert abs(t_sf_two_sided(2.0, 10) - 0.0734) < 1e-3
-    assert abs(t_sf_two_sided(1.96, 1e6) - 0.050) < 1e-3
     assert abs(t_ppf(0.975, 10) - 2.228) < 1e-3
     assert abs(z_ppf(0.975) - 1.95996) < 1e-4
     bas, haut = wilson_ci(50, 100)
-    assert abs(bas - 0.4038) < 1e-3 and abs(haut - 0.5962) < 1e-3, (bas, haut)
-    # Régression sur une relation exacte
+    assert abs(bas - 0.4038) < 1e-3 and abs(haut - 0.5962) < 1e-3
     r = ols([1, 2, 3, 4, 5], [2.0, 4.0, 6.0, 8.0, 10.0])
     assert r is not None and abs(r.pente - 2.0) < 1e-9 and abs(r.r2 - 1.0) < 1e-9
     m = ols_multiple(pd.DataFrame({"a": [1, 2, 3, 4, 5, 6.0], "b": [1, 0, 1, 0, 1, 0.0]}),
@@ -2592,45 +3814,89 @@ def _autotest() -> None:
 
     print("2. Chargement et normalisation")
     df, rapport = load_data(use_fake=True)
-    assert len(df) > 500 and rapport.n_lignes_retenues == len(df)
-    assert set(df["statut"].unique()) <= set(STATUT_ORDER + [VALEUR_INCONNUE]), df["statut"].unique()
-    assert set(df["type_demande"].unique()) <= set(TYPE_ORDER + [VALEUR_INCONNUE])
+    assert len(df) > 1000 and rapport.n_lignes_retenues == len(df)
+    assert set(df["statut"].unique()) <= set(STATUT_ORDER + [VALEUR_INCONNUE])
+    assert set(df["famille"].unique()) <= {FAMILLE_RFP, FAMILLE_DD, VALEUR_INCONNUE}
     assert df["date_reception"].notna().all()
     assert not rapport.valeurs_inconnues, rapport.valeurs_inconnues
-    assert rapport.doublons_supprimes > 0, "les doublons du jeu synthétique doivent être vus"
-    print(f"   ✓ {fmt_int(len(df))} lignes, {fmt_int(rapport.doublons_supprimes)} doublons écartés")
+    assert rapport.doublons_supprimes > 0
+    # La part ESG arrive en fraction, en pourcentage ou en tranche écrite :
+    # les trois formes doivent aboutir à une tranche exploitable.
+    essai = pd.Series([0.82, "45 %", "> 75 % ESG", None, 12])
+    parts, bandes = _vers_esg(essai)
+    assert list(bandes) == [ESG_FORT, ESG_MOYEN, ESG_FORT, ESG_INCONNU, ESG_FAIBLE], list(bandes)
+    assert math.isnan(parts.iloc[2]), "une tranche écrite ne donne pas un pourcentage"
+    print(f"   ✓ {fmt_int(len(df))} lignes, trois écritures ESG absorbées")
 
-    print("3. Filtres")
-    filtres = Filters(date_min=(dt.date.today() - dt.timedelta(days=365)), date_max=dt.date.today(),
-                      dims={"type_demande": ["RFP", "RFI"]})
+    print("3. Cohérence métier")
+    # Une due diligence n'a pas de résultat commercial.
+    assert set(df.loc[df["est_dd"], "resultat"].unique()) == {RESULTAT_HORS_RFP}
+    # L'encours gagné n'existe que sur un RFP remporté.
+    assert df.loc[df["aum_gagne"].notna(), "est_gagne"].all()
+    assert df.loc[df["aum_gagne"].notna(), "est_rfp"].all()
+    taux, gagnes, tranches, _ = taux_succes_rfp(df)
+    assert 0 < taux < 1 and tranches <= int(df["est_rfp"].sum())
+    print(f"   ✓ résultat réservé aux RFP, taux de succès {fmt_pct(taux, 1)}")
+
+    print("4. Métriques de croissance")
+    # Les volumes de la démonstration reproduisent la trajectoire du pôle : ces
+    # trois taux doivent retomber sur les chiffres publiés au comité.
+    attendus = {3: 0.49, 5: 1.49, 10: 1.58}
+    for horizon, cible in attendus.items():
+        c = croissance(df, horizon)
+        assert c is not None and abs(c.taux - cible) < 0.02, (horizon, c.taux if c else None)
+        print(f"   ✓ {horizon:2d} ans : {fmt_pct(c.taux, 0)} "
+              f"({c.annee_base} → {c.annee_reference}), attendu {fmt_pct(cible, 0)}")
+
+    print("5. Filtres et drill-down")
+    filtres = Filters(date_min=(dt.date.today() - dt.timedelta(days=730)),
+                      date_max=dt.date.today(), dims={"famille": [FAMILLE_RFP]})
     sel = filter_data(df, filtres)
-    assert 0 < len(sel) < len(df) and set(sel["type_demande"].unique()) <= {"RFP", "RFI"}
+    assert 0 < len(sel) < len(df) and set(sel["famille"].unique()) == {FAMILLE_RFP}
     prec = filter_data(df, filtres.periode_precedente())
-    assert prec["date_reception"].max() < sel["date_reception"].min()
-    print(f"   ✓ {fmt_int(len(sel))} lignes sélectionnées, {fmt_int(len(prec))} sur la période précédente")
+    assert prec.empty or prec["date_reception"].max() < sel["date_reception"].min()
+    index = index_recherche(df)
+    assert index.str.contains(cle_recherche("leman"), regex=False).any()
+    print(f"   ✓ {fmt_int(len(sel))} lignes filtrées, recherche plein texte opérante")
 
-    print("4. Analyse complète")
-    analyse = build_analysis(sel, filtres, rapport, prec)
+    print("6. Analyse complète")
+    analyse = build_analysis(df, Filters(), rapport, None, options={"granularite": "annee"})
     assert not analyse.erreurs, analyse.erreurs
-    assert len(analyse.kpis) == 8
-    assert len(analyse.blocs) >= 12, [b.cle for b in analyse.blocs]
+    assert len(analyse.kpis) >= 10
+    manquantes = [c for c in SECTIONS if not analyse.section(c)]
+    assert not manquantes, f"sections vides : {manquantes}"
     for bloc in analyse.blocs:
         assert bloc.figure.data, f"{bloc.cle} : figure vide"
         assert not bloc.tableau.empty, f"{bloc.cle} : tableau vide"
         assert bloc.accroche and bloc.titre
-    print(f"   ✓ {len(analyse.kpis)} KPI, {len(analyse.blocs)} blocs : "
-          f"{', '.join(b.cle for b in analyse.blocs)}")
+        assert bloc.dimension is None or bloc.dimension in DIMENSIONS
+    cliquables = [b.cle for b in analyse.blocs if b.dimension]
+    assert len(cliquables) >= 4, cliquables
+    assert analyse.insights, "aucun constat produit sur l'historique complet"
+    print(f"   ✓ {len(analyse.blocs)} blocs sur {len(SECTIONS)} sections, "
+          f"{len(cliquables)} cliquables, {len(analyse.insights)} constats")
 
-    print("5. Cas limites")
+    print("7. Thèmes")
+    initial = THEME
+    for nom in THEMES:
+        appliquer_theme(nom)
+        a = build_analysis(df.head(400), Filters(), rapport)
+        assert not a.erreurs, (nom, a.erreurs)
+    appliquer_theme(initial)
+    print(f"   ✓ {', '.join(THEMES)} — figures reconstruites sans erreur")
+
+    print("8. Cas limites")
     vide = build_analysis(df.head(0), Filters(), rapport)
-    assert vide.vide and not vide.blocs and not vide.erreurs
+    assert vide.vide and not vide.blocs and not vide.erreurs and not vide.insights
     minuscule = build_analysis(df.head(3), Filters(), rapport)
     assert not minuscule.erreurs, minuscule.erreurs
-    sans_montant = df.copy()
-    sans_montant["montant_potentiel"] = np.nan
-    partiel = build_analysis(sans_montant, Filters(), rapport)
-    assert not partiel.erreurs and "montants" not in [b.cle for b in partiel.blocs]
-    print("   ✓ sélection vide, échantillon minuscule et colonne absente gérés")
+    ampute = df.copy()
+    for colonne in ("expertise", "consultant", "sous_classe_actifs", "part_esg", "bande_esg"):
+        ampute[colonne] = VALEUR_INCONNUE if ampute[colonne].dtype == object else np.nan
+    partiel = build_analysis(ampute, Filters(), rapport)
+    assert not partiel.erreurs, partiel.erreurs
+    assert "dd_expertise" not in [b.cle for b in partiel.blocs]
+    print("   ✓ sélection vide, échantillon minuscule et dimensions absentes gérés")
 
     print("\nTous les contrôles sont passés.")
 

@@ -1,11 +1,12 @@
-# Dashboard d'activité RFP / RFI
+# RFP Intelligence
 
-Tableau de bord d'un pôle de réponse aux appels d'offres en gestion d'actifs :
-flux de demandes, délais de traitement, taux de succès, charge d'équipe et
-analyse statistique des facteurs de délai.
+Produit de pilotage de l'activité **RFP / Due Diligence** d'une société de
+gestion d'actifs. Il répond aux six questions qui structurent le pilotage du
+pôle : combien de demandes arrivent, dans quelle proportion RFP / due diligence,
+à quelle vitesse l'équipe les traite, ce que deviennent les appels d'offres,
+quel encours ils rapportent, et comment tout cela évolue sur dix ans.
 
-Trois fichiers Python, un thème sombre, cinq pages à l'écran, et un rapport HTML
-autonome paginé que l'on peut envoyer par courriel.
+Trois fichiers Python, neuf pages, un rapport HTML autonome.
 
 ---
 
@@ -16,55 +17,17 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-L'application s'ouvre sur **http://localhost:8501** (le navigateur démarre seul ;
-sinon, coller l'adresse). Port déjà pris ? `streamlit run app.py --server.port 8502`.
-`Ctrl + C` arrête le serveur.
+L'application s'ouvre sur **http://localhost:8501**. Port occupé ?
+`streamlit run app.py --server.port 8502`. `Ctrl + C` arrête le serveur.
 
-Elle démarre sur un jeu de **données synthétiques** (36 mois, ~1 800 demandes,
-saisonnalité et taux de succès crédibles) : rien à configurer pour la découvrir.
-
-Deux autres commandes :
+Elle démarre sur un jeu de **données de démonstration** couvrant 2014 → aujourd'hui
+(~1 700 questionnaires). Rien à configurer pour la découvrir.
 
 ```bash
-python core.py                # contrôle la chaîne de bout en bout, statistiques comprises
-python export.py              # écrit rapport.html (thème sombre, écran)
-python export.py --clair      # même rapport en thème clair, pour l'impression
+python core.py                # contrôle la chaîne de bout en bout
+python export.py              # écrit rapport.html (thème institutionnel)
+python export.py --clair      # variante claire, pour l'impression
 ```
-
----
-
-## Brancher les vraies données (5 minutes)
-
-Tout se passe dans le bloc **`[BRANCHEMENT PRINCIPAL]`**, en tête de `core.py`.
-Aucun autre fichier n'est à modifier.
-
-1. `USE_FAKE_DATA = False`
-2. `DATA_PATH = "chemin/vers/le/classeur.xlsx"`
-3. `SHEET_NAME = "nom de l'onglet"`
-4. `COLUMN_MAP` : à droite, le nom réel de chaque colonne du classeur.
-
-**La correspondance est tolérante** : casse, accents, espaces, tirets et
-underscores sont ignorés — `"Date Réception"`, `"date_reception"` et
-`"DATE-RECEPTION"` désignent la même colonne. Une table `COLUMN_ALIASES`
-reconnaît en plus les intitulés courants (`"Date de réception"`,
-`"Nombre de questions"`, `"Asset class"`…). Si un intitulé maison n'est pas
-reconnu, il suffit de l'ajouter à cette liste.
-
-**Colonnes indispensables** : date de réception, type de demande, statut.
-Toutes les autres sont facultatives : si elles manquent, les analyses
-correspondantes disparaissent proprement, l'application ne casse pas.
-
-**Modalités** : `STATUS_NORMALIZATION`, `TYPE_NORMALIZATION`,
-`CLIENT_TYPE_NORMALIZATION` et `LANGUE_NORMALIZATION` ramènent les variantes
-d'écriture (`"gagne"`, `"GAGNÉ"`, `"won"`) à une valeur unique. Une modalité
-inconnue n'est jamais supprimée : elle reste affichée et remonte dans la page
-« Données & qualité », avec l'invitation à l'ajouter à la table.
-
-**Paramètres métier** : délais cibles par type (`SLA_JOURS_OUVRES`), horizon de
-projection, seuil de significativité, thème par défaut — même bloc.
-
-> Les données réelles ne doivent pas rejoindre le dépôt : `.gitignore` exclut
-> déjà `*.xlsx`, `*.csv` et le rapport généré.
 
 ---
 
@@ -72,124 +35,176 @@ projection, seuil de significativité, thème par défaut — même bloc.
 
 | Fichier | Rôle | Dépendance à Streamlit |
 |---|---|---|
-| `core.py` | Configuration, lecture Excel, normalisation, calculs, statistiques, thèmes et figures Plotly | **aucune** |
-| `app.py` | Interface : 5 pages, filtres, indicateurs | oui |
+| `core.py` | Configuration, lecture Excel, normalisation, **couche métrique**, statistiques, thèmes, figures Plotly, moteur d'insights | **aucune** |
+| `app.py` | Interface : navigation, filtres globaux, drill-down, explorateur, export | oui |
 | `export.py` | Rapport HTML autonome, paginé | non |
 | `assets/` | Police Inter (OFL), lecteur Lottie (MIT), 4 animations | — |
-| `.streamlit/config.toml` | Thème sombre des widgets Streamlit | — |
 
-`core.py` produit un objet `Analysis` (indicateurs + blocs d'analyse) que
-`app.py` et `export.py` consomment **à l'identique** : une analyse ajoutée au
-cœur apparaît automatiquement à l'écran *et* dans le rapport.
+`core.py` produit un objet `Analysis` — indicateurs, blocs d'analyse, constats —
+que `app.py` et `export.py` consomment **à l'identique**. Un chiffre affiché à
+l'écran est le même que dans le rapport, par construction.
 
-Ajouter une analyse = écrire une fonction `_bloc_xxx(df, mensuel, stats)` qui
-renvoie un `Block`, puis l'inscrire dans le tuple `_CONSTRUCTEURS`. Un bloc qui
-échoue est signalé dans la page qualité, il n'interrompt jamais le reste.
+**Couche métrique.** Chaque indicateur est défini une fois, dans une fonction
+documentée (`taux_succes_rfp`, `aum_gagne`, `cadence_mensuelle`, `croissance`…).
+Deux graphiques ne peuvent pas compter la même chose différemment.
+
+**Ajouter une analyse** : écrire `_bloc_xxx(df, mensuel, stats)` qui renvoie un
+`Block`, puis l'inscrire dans `_CONSTRUCTEURS`. Elle apparaît automatiquement
+dans la page de sa section **et** dans le rapport. Un bloc qui échoue est
+signalé dans la page qualité ; il n'interrompt jamais l'écran.
 
 ---
 
-## Ce que contient le tableau de bord
+## Les neuf pages
 
-**8 indicateurs** comparés à la période précédente de même durée : demandes
-reçues, questions traitées, délai médian, respect du délai cible, taux de succès
-(avec intervalle de confiance), encours remporté, encours en jeu, dossiers
-ouverts.
+| Page | Question à laquelle elle répond |
+|---|---|
+| **Vue d'ensemble** | Où en est l'activité, qu'est-ce qui demande une action aujourd'hui ? |
+| **Activité** | La charge augmente-t-elle ? À quelle vitesse la traite-t-on ? |
+| **Pipeline RFP** | Que deviennent les appels d'offres, et où gagne-t-on ? |
+| **Due diligence** | Quelles expertises et quels pays absorbent la charge ? |
+| **Encours & gains** | Combien l'effort commercial rapporte-t-il réellement ? |
+| **ESG** | Quel poids prend la composante ESG, et chez qui ? |
+| **Insights** | Que faut-il retenir, et qu'est-ce qui explique les délais ? |
+| **Explorateur** | Du chiffre agrégé au dossier individuel. |
+| **Qualité & export** | D'où viennent les données, que valent-elles, comment les diffuser ? |
 
-**14 analyses** réparties en cinq pages :
+### Drill-down
 
-- *01 Vue d'ensemble* — flux mensuel par type avec tendance, entonnoir de
-  conversion, état du portefeuille ;
-- *02 Performance commerciale* — taux de succès par classe d'actifs (IC de
-  Wilson), encours en jeu par statut, comptes les plus sollicitants, origine
-  géographique ;
-- *03 Efficacité opérationnelle* — distribution des délais par type face au
-  délai cible, évolution mensuelle du délai, charge par analyste, saisonnalité ;
-- *04 Analyse statistique* — régression délai / volume de questions, régression
-  multiple des facteurs de délai, projection du flux à 6 mois ;
-- *05 Données & qualité* — table détaillée, export CSV, journal d'import,
-  génération du rapport.
+Le produit ne laisse jamais dans une impasse analytique :
 
-Chaque graphique est accompagné d'une phrase de lecture chiffrée, d'une note
-méthodologique et de son **jumeau tableau** (« Voir les données »).
+- **une carte d'indicateur est un lien** — « Appels d'offres » ouvre le pipeline
+  RFP, « Encours remporté » ouvre la page des gains ;
+- **un clic sur une barre filtre tout le tableau de bord** — cliquer
+  « Investment Solutions » sur la charge par expertise recalcule l'ensemble des
+  pages sur cette expertise ;
+- **un clic sur une ligne de l'explorateur ouvre la fiche du dossier**, sans
+  perdre les filtres ni la position dans la liste ;
+- **la page vit dans l'URL** (`?page=rfp`) : le lien est partageable et le
+  bouton « précédent » du navigateur fonctionne.
+
+### Filtres
+
+Une seule barre, au-dessus de tout ce qu'elle porte : période, puis les quatre
+dimensions de premier niveau, les autres derrière « Plus de filtres ». Les
+filtres actifs sont affichés en permanence sous le titre — on ne lit jamais un
+chiffre sans savoir sur quoi il porte.
+
+---
+
+## Brancher vos données (5 minutes)
+
+Tout se passe dans le bloc **`[BRANCHEMENT PRINCIPAL]`**, en tête de `core.py`.
+
+1. `USE_FAKE_DATA = False`
+2. `DATA_PATH` — chemin du classeur ; `SHEET_NAME` — onglet
+3. `COLUMN_MAP` — nom réel de chaque colonne
+
+**La correspondance est tolérante** : casse, accents, espaces, tirets et
+underscores sont ignorés, et `COLUMN_ALIASES` reconnaît les intitulés courants
+(`"Date de réception"`, `"Sub asset class"`, `"ESG %"`…).
+
+**Colonnes indispensables** : date de réception, type de demande, statut. Toutes
+les autres sont facultatives — si `Expertise` manque, la page due diligence
+perd son classement par expertise et conserve le reste. Rien ne casse, et la
+page « Qualité » dit précisément ce qui manque.
+
+**Vocabulaire métier** — paramétrable dans le même bloc :
+
+- `FAMILLE_PAR_TYPE` regroupe les types fins (RFP / RFI / DDQ) dans les deux
+  familles du pilotage : **RFP** et **Due Diligence** ;
+- `STATUS_NORMALIZATION` ramène les variantes d'écriture (`gagne`, `GAGNÉ`,
+  `won`) à une valeur unique ; une modalité inconnue reste visible et remonte
+  dans la page qualité ;
+- la **part ESG** est acceptée sous trois formes : fraction (`0,45`),
+  pourcentage (`45 %`) ou tranche écrite (`> 75 % ESG`). Une tranche écrite
+  donne une tranche, jamais un pourcentage inventé ;
+- `SLA_JOURS_OUVRES`, `HORIZONS_CROISSANCE`, `ESG_SEUIL_FORT`, `THEME_DEFAUT`.
+
+> Les données réelles ne doivent pas rejoindre le dépôt : `.gitignore` exclut
+> `*.xlsx`, `*.csv` et le rapport généré.
+
+---
+
+## Définitions qui engagent
+
+- **Famille** — RFP d'un côté, toute la due diligence de l'autre. C'est la
+  lecture du pôle ; le type fin reste disponible en filtre.
+- **Résultat** — n'existe **que** pour un appel d'offres. Une due diligence ne
+  se gagne pas : son résultat est « sans objet », pas « perdu ».
+- **Taux de succès** — gagnés / (gagnés + perdus). Les dossiers en attente de
+  décision sont exclus du dénominateur ; les compter comme des échecs
+  fabriquerait un effondrement sur les périodes récentes.
+- **Encours remporté** — encours des RFP gagnés, rattaché à l'année de
+  réception du dossier.
+- **Délai de traitement** — jours **calendaires** entre réception et envoi,
+  comme au comité. Le respect du délai cible se mesure, lui, en jours ouvrés.
+- **Cadence** — dossiers **terminés** par mois : la capacité de production de
+  l'équipe, à distinguer de la charge qui lui arrive.
+- **Croissance sur N ans** — dernière année civile **complète** contre celle
+  d'il y a N ans. L'année en cours est exclue : la comparer à une année pleine
+  afficherait un effondrement qui n'existe pas.
+- **Limite de lecture** — les clients tranchent plusieurs mois après l'envoi.
+  Sur une période récente, le taux de succès et l'encours remporté sont
+  mécaniquement sous-évalués. L'avertissement est affiché sous les indicateurs.
+
+Les **insights** sont calculés, jamais rédigés d'avance : chaque phrase provient
+d'une fonction analytique, et disparaît si la donnée ne permet pas de
+l'établir. Aucun chiffre n'est produit par un modèle de langage.
 
 ---
 
 ## Design
 
-**Thème sombre** par défaut, défini une seule fois dans `core.py` (`THEMES`) et
-consommé par l'écran comme par le rapport : les deux ne peuvent pas diverger.
-`core.appliquer_theme("clair")` bascule l'ensemble, y compris les figures.
+**Trois thèmes** définis une seule fois dans `core.py` et partagés par l'écran
+et le rapport : *Institutionnel* (par défaut), *Sombre*, *Clair* pour
+l'impression. Le sélecteur est en bas de la barre latérale.
 
-**Palette validée** sur sa propre surface (`#14181e`) : bande de clarté, plancher
-de chroma, séparation sous daltonisme et contraste ≥ 3:1 — les huit teintes
-passent, et les trois premières restent valides en toutes-paires pour les nuages
-de points. L'ordre des teintes est le mécanisme de sécurité, pas une préférence :
-ne pas permuter sans revalider. L'identité d'une série n'est jamais portée par la
-seule couleur (légende, libellés directs, tableau équivalent), et les couleurs
-d'état (gagné / perdu / abandonné) s'accompagnent toujours du libellé et de la
-valeur.
+**Palette validée** sur sa propre surface : bande de clarté, plancher de chroma,
+séparation sous daltonisme et contraste — les huit teintes passent les
+contrôles. L'ordre des teintes est le mécanisme de sécurité, pas une
+préférence : ne pas permuter sans revalider. L'identité d'une série n'est jamais
+portée par la seule couleur (légende, libellés directs, tableau équivalent), et
+les couleurs d'état s'accompagnent toujours du libellé et de la valeur.
 
-**Typographie** : Inter variable (licence SIL OFL), embarquée en base64 — même
-rendu sur un poste hors ligne et dans un rapport transmis par courriel. Chiffres
-tabulaires partout où des valeurs s'alignent.
+**Choix de formes assumés** : pas de camembert à vingt parts pour la répartition
+par expertise — un classement en barres, queue regroupée dans « Autres ». Au-delà
+de sept catégories, aucune part d'un disque n'est comparable à l'œil.
 
-**Animations Lottie**, jouées en local (lecteur `lottie_light`, MIT, servi depuis
-`assets/` — jamais un CDN) :
+**Typographie** : Inter variable (SIL OFL) embarquée en base64 — même rendu hors
+ligne et dans un rapport transmis par courriel. Chiffres tabulaires partout où
+des valeurs s'alignent.
 
-| Animation | Où | Rôle |
-|---|---|---|
-| `marque` | barre latérale, rail du rapport | identité : les barres et leur tendance |
-| `flux` | couverture du rapport | la courbe se trace à l'ouverture |
-| `chargement` | pendant la génération du rapport | état d'attente |
-| `valide` | rapport prêt, fin de la méthodologie | confirmation |
-
-Elles sont générées depuis la palette du tableau de bord, pas récupérées toutes
-faites. Le mouvement sert un état ou un moment de lecture ; il n'y a aucune
-boucle décorative à côté d'un graphique. `prefers-reduced-motion` coupe tout et
-affiche l'image finale.
+**Animations Lottie** jouées en local (lecteur `lottie_light`, MIT, servi depuis
+`assets/`, jamais un CDN) : identité dans la barre latérale, tracé de couverture
+du rapport, état de chargement, confirmation. Le mouvement sert un état ou un
+moment de lecture. `prefers-reduced-motion` coupe tout.
 
 Si `assets/` est absent, l'interface perd ses animations et sa police — jamais
 son contenu.
 
 ---
 
-## Méthodologie
+## Rapport HTML
 
-- **Délai de traitement** : jours **ouvrés** entre réception et envoi
-  (`numpy.busday_count`). Les dossiers non envoyés n'entrent dans aucune
-  statistique de délai.
-- **Taux de succès** : gagnées / (gagnées + perdues). Les dossiers en attente de
-  décision sont exclus du dénominateur, jamais comptés comme des échecs.
-- **Intervalles de confiance** : Wilson à 95 % pour les proportions, Student à
-  95 % pour les coefficients de régression.
-- **Régressions** : moindres carrés ordinaires, simples et multiples, avec
-  erreurs types, statistiques *t* et p-values. La loi de Student est évaluée par
-  la fonction bêta incomplète régularisée implémentée dans `core.py` : ni SciPy
-  ni statsmodels ne sont nécessaires, et `python core.py` vérifie les valeurs
-  contre les tables de référence.
-- **Mois en cours** : toujours exclu des ajustements de tendance, et signalé
-  comme partiel sur les graphiques de volume.
-- **Censure à droite** : les clients tranchent plusieurs mois après l'envoi. Sur
-  une période récente, le taux de succès et l'encours remporté sont donc
-  mécaniquement sous-évalués, et l'encours en jeu surévalué. L'avertissement est
-  affiché sous les indicateurs.
+Le bouton « Générer le rapport » (page *Qualité & export*) produit un fichier
+unique d'environ 4,7 Mo reprenant le périmètre filtré : couverture avec les
+chiffres clés, constats calculés, sept pages navigables (clic, flèches ← →,
+touches 0-7), les 24 analyses interactives, leurs tableaux et une annexe
+méthodologique. Plotly, Lottie, les animations et la police y sont embarqués :
+il s'ouvre d'un double-clic, sans Python, sans serveur, sans réseau.
 
 ---
 
-## Rapport HTML
+## Données de démonstration
 
-Le bouton « Générer le rapport » (page *Données & qualité*) produit un fichier
-unique d'environ 4,5 Mo reprenant le périmètre filtré :
+Le jeu par défaut est **explicitement synthétique** — la source est libellée
+comme telle partout. Sa forme reproduit celle d'un pôle réel : due diligence
+multipliée par quatre en dix ans à effectif RFP constant, creux d'août, délais
+corrélés au volume de questions, collecte très concentrée sur quelques mandats.
 
-- une **couverture** avec les quatre chiffres clés et la courbe qui se trace ;
-- **cinq pages** navigables au clic, aux flèches ← →, aux touches 0-5, avec
-  `Début` / `Fin` ;
-- les 14 analyses interactives, leurs tableaux de données et une annexe
-  méthodologique.
-
-Plotly, Lottie, les animations et la police y sont embarqués : le fichier
-s'ouvre d'un double-clic, sans Python, sans serveur et sans connexion réseau.
-
-Pour l'impression papier, préférer `python export.py --clair` : le thème sombre
-est fait pour l'écran, et imprimer un aplat foncé gaspille de l'encre pour un
-résultat moins lisible.
+Les volumes annuels sont paramétrés (`VOLUMES_ANNUELS`) de sorte que les trois
+indicateurs de croissance du produit tombent sur ceux que publie le pôle :
+**+49 % sur 3 ans, +149 % sur 5 ans, +158 % sur 10 ans**. `python core.py`
+vérifie cette concordance à chaque exécution — c'est ainsi que les définitions
+de métriques sont validées, et non par leur seul intitulé.

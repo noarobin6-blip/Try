@@ -25,11 +25,11 @@ import core
 
 CHEMIN_RAPPORT = Path("rapport.html")
 
-# Blocs retenus pour la synthèse de couverture, dans l'ordre de lecture
-CLES_SYNTHESE = ("flux", "entonnoir", "succes_classe", "delai_type",
-                 "facteurs", "projection")
+# Blocs repris dans la synthèse quand aucun constat n'est calculable
+CLES_SYNTHESE = ("flux_famille", "volume_annuel", "resultats_rfp", "rfp_succes",
+                 "dd_expertise", "aum_annuel", "esg_evolution")
 # Indicateurs mis en avant sur la couverture
-CLES_HEROS = ("volume", "succes", "delai", "gagne")
+CLES_HEROS = ("questionnaires", "dd", "rfp", "aum")
 
 
 def bibliotheque_plotly() -> str:
@@ -213,7 +213,8 @@ tbody tr:hover td{background:color-mix(in srgb,var(--serie1) 7%,transparent)}
   position:relative}
 .synthese li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;
   border-radius:50%;background:var(--serie1)}
-.synthese li b{color:var(--ink);font-weight:620}
+.synthese li b{color:var(--ink);font-weight:560}
+.synthese li .appui{color:var(--muted);font-size:11.5px;display:inline-block;margin-top:3px}
 
 /* ------------------------------------------------------------- annexe ---- */
 .annexe{background:var(--surface);border:1px solid var(--border);border-radius:14px;
@@ -341,11 +342,19 @@ def _carte_html(bloc: core.Block, indice: int) -> str:
 
 
 def _synthese_html(analyse: core.Analysis) -> str:
-    points = [b for cle in CLES_SYNTHESE for b in analyse.blocs if b.cle == cle]
-    if not points:
-        points = analyse.blocs[:5]
-    items = "".join(f"<li><b>{_e(b.titre)}</b> — {_e(b.accroche)}</li>" for b in points)
-    return f'<div class="synthese"><h3>Ce qu\'il faut retenir</h3><ul>{items}</ul></div>'
+    """Les constats calculés d'abord ; à défaut, la lecture de chaque analyse."""
+    if analyse.insights:
+        items = "".join(
+            f"<li><b>{_e(i.texte)}</b>"
+            + (f"<br><span class='appui'>{_e(i.appui)}</span>" if i.appui else "")
+            + "</li>" for i in analyse.insights)
+        titre = "Ce qu'il faut retenir"
+    else:
+        points = [b for cle in CLES_SYNTHESE for b in analyse.blocs if b.cle == cle]
+        points = points or analyse.blocs[:5]
+        items = "".join(f"<li><b>{_e(b.titre)}</b> — {_e(b.accroche)}</li>" for b in points)
+        titre = "Lecture des analyses"
+    return f'<div class="synthese"><h3>{titre}</h3><ul>{items}</ul></div>'
 
 
 def _annexe_html(analyse: core.Analysis) -> str:

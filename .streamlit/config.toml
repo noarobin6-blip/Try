@@ -1,16 +1,13 @@
-# Thème de l'application — aligné sur la palette définie dans core.py.
-# Sans ce fichier, un poste configuré en thème sombre afficherait des widgets
-# sombres autour de graphiques clairs.
+# Thème de l'application — aligné sur la palette « sombre » de core.py.
+# Sans ce fichier, les widgets Streamlit resteraient clairs autour de
+# graphiques sombres.
 [theme]
-base = "light"
-primaryColor = "#2a78d6"
-backgroundColor = "#f7f6f3"
-secondaryBackgroundColor = "#fcfcfb"
-textColor = "#0b0b0b"
+base = "dark"
+primaryColor = "#3987e5"
+backgroundColor = "#0d1014"
+secondaryBackgroundColor = "#14181e"
+textColor = "#eef2f6"
 font = "sans serif"
-
-[server]
-headless = true
 
 [browser]
 gatherUsageStats = false

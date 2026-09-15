@@ -8,11 +8,15 @@
 # =============================================================================
 from __future__ import annotations
 
+import base64
 import datetime as dt
+import json
 import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import numpy as np
@@ -192,57 +196,159 @@ DIMENSIONS: dict[str, str] = {
 }
 
 # =============================================================================
-#  IDENTITÉ VISUELLE
-#  Palette validée (checks lightness / chroma / séparation daltonisme /
-#  contraste) sur la surface claire #fcfcfb. Ne pas modifier à la légère :
-#  l'ordre des teintes est le mécanisme de sécurité daltonisme, pas un choix
-#  esthétique.
+#  IDENTITÉ VISUELLE — deux thèmes, une seule source de vérité
+# -----------------------------------------------------------------------------
+#  Le thème « sombre » est celui de l'écran et du rapport ; le thème « clair »
+#  existe pour l'impression (`python export.py --clair`). Chaque palette
+#  catégorielle a été passée au contrôle daltonisme / contraste sur SA surface :
+#    sombre : 8 slots sur #14181e — bande de clarté, chroma, séparation CVD et
+#             contraste ≥ 3:1 tous validés ; 3 premiers slots valides en
+#             toutes-paires (nuages de points).
+#    clair  : mêmes teintes re-étagées pour #fcfcfb.
+#  L'ORDRE des teintes est le mécanisme de sécurité daltonisme, pas une
+#  préférence esthétique : ne pas permuter sans revalider.
 # =============================================================================
-SURFACE = "#fcfcfb"        # surface des graphiques
-PLANE = "#f7f6f3"          # plan de page
-INK = "#0b0b0b"            # encre primaire
-INK_2 = "#52514e"          # encre secondaire
-INK_MUTED = "#898781"       # axes, libellés discrets
-GRID = "#e6e4dd"           # grille (filet, toujours plein — jamais pointillé)
-AXIS = "#c3c2b7"           # ligne de base
-BORDER = "rgba(11,11,11,0.10)"
-
-# Slots catégoriels, assignés dans un ordre fixe, jamais cyclés.
-SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-          "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
-
-# Rampe séquentielle (magnitude) : une seule teinte, clair -> foncé.
-BLUE_SCALE = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
-# Rampe ordinale (étapes discrètes ordonnées) : ne descend pas sous le step 250.
-BLUE_ORDINAL = ["#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#104281"]
-
-# Couleurs d'état : réservées, jamais réutilisées pour une série d'identité.
-# Le couple vert/rouge est indissociable sous deutéranopie : partout où ces
-# couleurs sont employées, le libellé et la valeur sont écrits sur la marque
-# (règle "icône + libellé", jamais la couleur seule) et la vue tableau existe.
-STATUS_GOOD = "#0ca30c"
-STATUS_WARNING = "#fab219"
-STATUS_SERIOUS = "#ec835a"
-STATUS_CRITICAL = "#d03b3b"
-SUCCESS_TEXT = "#006300"
-
-STATUT_COLORS = {
-    STATUT_EN_COURS: INK_MUTED,      # neutre : aucun résultat encore
-    STATUT_ENVOYE: SERIES[0],        # en attente de décision
-    STATUT_GAGNE: STATUS_GOOD,
-    STATUT_PERDU: STATUS_CRITICAL,
-    STATUT_ABANDONNE: STATUS_SERIOUS,
-}
-TYPE_COLORS = {"RFP": SERIES[0], "RFI": SERIES[1], "DDQ": SERIES[2]}
-CLIENT_TYPE_COLORS = {"Institutionnel": SERIES[0], "Distributeur": SERIES[1], "Consultant": SERIES[2]}
-
-FONT_STACK = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+FONT_STACK = ('"InterVariable", "Inter", system-ui, -apple-system, "Segoe UI", '
+              'Roboto, "Helvetica Neue", Arial, sans-serif')
 TEMPLATE_NAME = "rfp_premium"
+
+THEMES: dict[str, dict[str, Any]] = {
+    "sombre": dict(
+        PLANE="#0d1014",          # fond de page
+        SURFACE="#14181e",        # cartes et aires de tracé
+        ELEVATION="#1b212a",      # survol, éléments soulevés
+        INK="#eef2f6",            # encre primaire
+        INK_2="#a7b2c0",          # encre secondaire
+        INK_MUTED="#6c7889",      # axes, libellés discrets
+        GRID="#222831",           # grille (filet plein, jamais pointillé)
+        AXIS="#2f3845",           # ligne de base
+        BORDER="rgba(255,255,255,0.08)",
+        VOILE="rgba(20,24,30,0.92)",     # fond des annotations posées sur un tracé
+        ACCENT="#3987e5",         # chrome : rail actif, liens, focus
+        SERIES=["#3987e5", "#d95926", "#199e70", "#c98500",
+                "#d55181", "#008300", "#9085e9", "#e66767"],
+        # Rampe séquentielle : le « presque rien » se fond dans la surface,
+        # le maximum s'en détache — l'inverse exact du thème clair.
+        SEQUENTIEL=["#151f2b", "#193356", "#1c4a83", "#2260ab",
+                    "#2f79cc", "#4f95e0", "#7fb2f0"],
+        ORDINAL=["#2f79cc", "#4f95e0", "#7fb2f0", "#a9cbf6"],
+        STATUS_GOOD="#0ca30c", STATUS_WARNING="#fab219",
+        STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
+        TEXTE_BON="#4ac45f", TEXTE_MAUVAIS="#ef7676",
+    ),
+    "clair": dict(
+        PLANE="#f7f6f3",
+        SURFACE="#fcfcfb",
+        ELEVATION="#ffffff",
+        INK="#0b0b0b",
+        INK_2="#52514e",
+        INK_MUTED="#898781",
+        GRID="#e6e4dd",
+        AXIS="#c3c2b7",
+        BORDER="rgba(11,11,11,0.10)",
+        VOILE="rgba(252,252,251,0.92)",
+        ACCENT="#0d366b",
+        SERIES=["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+                "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
+        SEQUENTIEL=["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
+                    "#256abf", "#184f95", "#0d366b"],
+        ORDINAL=["#2a78d6", "#1c5cab", "#184f95", "#104281"],
+        STATUS_GOOD="#0ca30c", STATUS_WARNING="#fab219",
+        STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
+        TEXTE_BON="#006300", TEXTE_MAUVAIS="#a82f2f",
+    ),
+}
+
+# [BRANCHEMENT] Thème par défaut de l'écran et du rapport : "sombre" ou "clair"
+THEME_DEFAUT = "sombre"
+
+# Jetons exposés au reste du programme — renseignés par appliquer_theme().
+THEME = THEME_DEFAUT
+PLANE = SURFACE = ELEVATION = INK = INK_2 = INK_MUTED = ""
+GRID = AXIS = BORDER = VOILE = ACCENT = ""
+STATUS_GOOD = STATUS_WARNING = STATUS_SERIOUS = STATUS_CRITICAL = ""
+TEXTE_BON = TEXTE_MAUVAIS = ""
+SERIES: list[str] = []
+SEQUENTIEL: list[str] = []
+ORDINAL: list[str] = []
+STATUT_COLORS: dict[str, str] = {}
+TYPE_COLORS: dict[str, str] = {}
+CLIENT_TYPE_COLORS: dict[str, str] = {}
+
+
+def _luminance(couleur: str) -> float:
+    """Luminance relative WCAG d'une couleur hexadécimale."""
+    h = couleur.lstrip("#")
+    canaux = []
+    for i in (0, 2, 4):
+        c = int(h[i:i + 2], 16) / 255
+        canaux.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * canaux[0] + 0.7152 * canaux[1] + 0.0722 * canaux[2]
+
+
+def encre_lisible(fond: str) -> str:
+    """Encre à poser sur un aplat : celle des deux qui contraste le plus.
+    Indispensable pour les valeurs écrites dans une cellule de carte de chaleur
+    ou dans un segment d'entonnoir, dont la couleur varie avec la donnée."""
+    clair, sombre = "#ffffff", "#0d1014"
+    lum = _luminance(fond)
+    contraste_clair = 1.05 / (lum + 0.05)
+    contraste_sombre = (lum + 0.05) / 0.05
+    return clair if contraste_clair >= contraste_sombre else sombre
+
+
+def couleur_rampe(rampe: Sequence[str], t: float) -> str:
+    """Couleur de la rampe séquentielle à la position t ∈ [0, 1]."""
+    if not math.isfinite(t):
+        return rampe[0]
+    return rampe[min(len(rampe) - 1, max(0, int(round(t * (len(rampe) - 1)))))]
+
+
+def appliquer_theme(nom: str = THEME_DEFAUT) -> None:
+    """Bascule tous les jetons de couleur et réenregistre le gabarit Plotly.
+
+    Les fonctions de tracé lisent ces noms à l'exécution : changer de thème
+    avant de construire les figures suffit, il n'y a rien d'autre à propager.
+    """
+    global THEME, PLANE, SURFACE, ELEVATION, INK, INK_2, INK_MUTED, GRID, AXIS
+    global BORDER, VOILE, ACCENT, SERIES, SEQUENTIEL, ORDINAL
+    global STATUS_GOOD, STATUS_WARNING, STATUS_SERIOUS, STATUS_CRITICAL
+    global TEXTE_BON, TEXTE_MAUVAIS, STATUT_COLORS, TYPE_COLORS, CLIENT_TYPE_COLORS
+
+    if nom not in THEMES:
+        raise ValueError(f"Thème inconnu : {nom!r}. Choix : {', '.join(THEMES)}.")
+    jetons = THEMES[nom]
+    THEME = nom
+    PLANE, SURFACE, ELEVATION = jetons["PLANE"], jetons["SURFACE"], jetons["ELEVATION"]
+    INK, INK_2, INK_MUTED = jetons["INK"], jetons["INK_2"], jetons["INK_MUTED"]
+    GRID, AXIS, BORDER, VOILE = jetons["GRID"], jetons["AXIS"], jetons["BORDER"], jetons["VOILE"]
+    ACCENT = jetons["ACCENT"]
+    SERIES = list(jetons["SERIES"])
+    SEQUENTIEL = list(jetons["SEQUENTIEL"])
+    ORDINAL = list(jetons["ORDINAL"])
+    STATUS_GOOD, STATUS_WARNING = jetons["STATUS_GOOD"], jetons["STATUS_WARNING"]
+    STATUS_SERIOUS, STATUS_CRITICAL = jetons["STATUS_SERIOUS"], jetons["STATUS_CRITICAL"]
+    TEXTE_BON, TEXTE_MAUVAIS = jetons["TEXTE_BON"], jetons["TEXTE_MAUVAIS"]
+
+    # Couleurs d'état : réservées, jamais réutilisées pour une série d'identité.
+    # Le couple vert/rouge est indissociable sous deutéranopie : partout où ces
+    # couleurs servent, le libellé et la valeur sont écrits sur la marque
+    # (règle « icône + libellé ») et la vue tableau existe.
+    STATUT_COLORS = {
+        STATUT_EN_COURS: INK_MUTED,      # neutre : aucun résultat encore
+        STATUT_ENVOYE: SERIES[0],        # en attente de décision
+        STATUT_GAGNE: STATUS_GOOD,
+        STATUT_PERDU: STATUS_CRITICAL,
+        STATUT_ABANDONNE: STATUS_SERIOUS,
+    }
+    TYPE_COLORS = dict(zip(TYPE_ORDER, SERIES[:3]))
+    CLIENT_TYPE_COLORS = dict(zip(["Institutionnel", "Distributeur", "Consultant"], SERIES[:3]))
+    _register_template()
 
 
 def _register_template() -> None:
     """Gabarit Plotly maison : marques fines, grille en filet, encre sobre."""
-    axis = dict(
+    axe = dict(
         showgrid=True, gridcolor=GRID, gridwidth=1, griddash="solid",
         zeroline=False, showline=True, linecolor=AXIS, linewidth=1,
         ticks="outside", tickcolor=AXIS, ticklen=4,
@@ -253,11 +359,11 @@ def _register_template() -> None:
     pio.templates[TEMPLATE_NAME] = go.layout.Template(
         layout=go.Layout(
             font=dict(family=FONT_STACK, size=12.5, color=INK_2),
-            paper_bgcolor=SURFACE,
-            plot_bgcolor=SURFACE,
+            paper_bgcolor="rgba(0,0,0,0)",   # la carte hôte porte le fond
+            plot_bgcolor="rgba(0,0,0,0)",
             colorway=SERIES,
-            xaxis=axis,
-            yaxis=axis,
+            xaxis=axe,
+            yaxis=axe,
             margin=dict(l=8, r=16, t=28, b=8),
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
@@ -266,32 +372,87 @@ def _register_template() -> None:
                 itemsizing="constant", tracegroupgap=6, traceorder="normal",
             ),
             hoverlabel=dict(
-                bgcolor="#ffffff", bordercolor=AXIS, align="left",
+                bgcolor=ELEVATION, bordercolor=AXIS, align="left",
                 font=dict(family=FONT_STACK, size=12, color=INK),
             ),
             hovermode="closest",
             bargap=0.28,
-            separators=", ",   # décimale française + espace fine insécable
-            colorscale=dict(sequential=[[i / (len(BLUE_SCALE) - 1), c]
-                                        for i, c in enumerate(BLUE_SCALE)]),
+            separators=", ",   # virgule décimale, milliers en espace fine
+            colorscale=dict(sequential=[[i / (len(SEQUENTIEL) - 1), c]
+                                        for i, c in enumerate(SEQUENTIEL)]),
             annotationdefaults=dict(font=dict(family=FONT_STACK, size=11.5, color=INK_2),
                                     showarrow=False),
         )
     )
+    try:   # extrémités de barres arrondies : Plotly >= 5.19 seulement
+        pio.templates[TEMPLATE_NAME].layout.barcornerradius = 4
+    except (ValueError, AttributeError):   # pragma: no cover — Plotly plus ancien
+        pass
 
 
-_register_template()
+appliquer_theme(THEME_DEFAUT)
 
-# Extrémités de barres arrondies : propriété introduite par Plotly 5.19.
-# Ajoutée après coup pour rester compatible avec les versions antérieures.
-try:
-    pio.templates[TEMPLATE_NAME].layout.barcornerradius = 4
-except (ValueError, AttributeError):   # pragma: no cover — Plotly plus ancien
-    pass
 
-# Le formatage français des nombres est porté par `separators` dans le gabarit
-# ci-dessus et par des libellés explicites : rien ne dépend d'un pack de langue
-# plotly.js, qui n'est pas embarqué dans la distribution standard.
+# =============================================================================
+#  RESSOURCES EMBARQUÉES — animations Lottie et police variable
+# -----------------------------------------------------------------------------
+#  Tout est servi depuis assets/ et jamais depuis un CDN : l'écran comme le
+#  rapport doivent fonctionner sur un poste sans accès réseau.
+#  Si un fichier manque, la fonction renvoie une valeur vide : l'interface perd
+#  son animation, jamais son contenu.
+# =============================================================================
+DOSSIER_ASSETS = Path(__file__).resolve().parent / "assets"
+ANIMATIONS = ("marque", "flux", "chargement", "valide")
+
+
+@lru_cache(maxsize=8)
+def _texte_asset(nom: str) -> str:
+    try:
+        return (DOSSIER_ASSETS / nom).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+@lru_cache(maxsize=8)
+def _base64_asset(nom: str) -> str:
+    try:
+        return base64.b64encode((DOSSIER_ASSETS / nom).read_bytes()).decode("ascii")
+    except OSError:
+        return ""
+
+
+@lru_cache(maxsize=8)
+def animation(nom: str) -> dict[str, Any] | None:
+    """Animation Lottie prête à sérialiser, ou None si le fichier manque."""
+    brut = _texte_asset(f"lottie/{nom}.json")
+    if not brut:
+        return None
+    try:
+        return json.loads(brut)
+    except json.JSONDecodeError:
+        return None
+
+
+def lecteur_lottie() -> str:
+    """Source du lecteur Lottie (build « light », licence MIT). Vide si absent."""
+    return _texte_asset("lottie_light.min.js")
+
+
+def police_css() -> str:
+    """Règle @font-face portant la police variable en base64.
+
+    Inter est sous licence SIL OFL (assets/INTER-LICENSE.txt) : l'embarquer est
+    autorisé, et c'est la seule façon d'obtenir la même typographie sur un poste
+    hors ligne comme dans un rapport transmis par courriel.
+    """
+    b64 = _base64_asset("inter-variable.woff2")
+    if not b64:
+        return ""
+    return ("@font-face{font-family:'InterVariable';font-style:normal;"
+            "font-weight:100 900;font-display:swap;"
+            f"src:url(data:font/woff2;base64,{b64}) format('woff2-variations');}}")
+
+
 PLOT_CONFIG = {
     "displayModeBar": False,
     "responsive": True,
@@ -301,21 +462,26 @@ PLOT_CONFIG = {
 # =============================================================================
 #  FORMATAGE FRANÇAIS  (espace fine insécable en séparateur de milliers)
 # =============================================================================
-NBSP = " "
+# Typographie française : espace insécable comme séparateur de milliers et
+# devant une unité. L'espace FINE insécable (U+202F) serait la forme la plus
+# juste, mais elle mesure moins de deux pixels dans un texte courant : à la
+# lecture, « 1 835 » redevient « 1835 ». La lisibilité prime.
+NBSP = " "
+ESP_UNITE = NBSP
 
 
 def fmt_int(x: Any, unite: str = "") -> str:
     if x is None or (isinstance(x, float) and not math.isfinite(x)) or pd.isna(x):
         return "—"
     s = f"{int(round(float(x))):,}".replace(",", NBSP)
-    return f"{s}{NBSP}{unite}".strip() if unite else s
+    return f"{s}{ESP_UNITE}{unite}" if unite else s
 
 
 def fmt_dec(x: Any, n: int = 1, unite: str = "") -> str:
     if x is None or (isinstance(x, float) and not math.isfinite(x)) or pd.isna(x):
         return "—"
     s = f"{float(x):,.{n}f}".replace(",", "\x00").replace(".", ",").replace("\x00", NBSP)
-    return f"{s}{NBSP}{unite}".strip() if unite else s
+    return f"{s}{ESP_UNITE}{unite}" if unite else s
 
 
 def fmt_pct(x: Any, n: int = 0) -> str:
@@ -1620,8 +1786,9 @@ def _bloc_flux(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | 
         ))
     if len(complets) < len(mensuel):
         partiel = mensuel.iloc[-1]
-        fig.add_annotation(x=partiel["mois"], y=partiel["volume"], yshift=14,
-                           text="mois en cours<br>(partiel)", font=dict(size=10.5, color=INK_MUTED))
+        fig.add_annotation(x=partiel["mois"], y=partiel["volume"], yshift=16, xanchor="right",
+                           text="mois en cours<br>(partiel)", align="right",
+                           font=dict(size=10.5, color=INK_MUTED))
     _axe_mois(fig, mensuel["mois"])
     fig.update_yaxes(title_text="Demandes reçues", rangemode="tozero")
     fig.update_layout(bargap=0.22)
@@ -1661,15 +1828,18 @@ def _bloc_entonnoir(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Blo
     valeurs = [recues, envoyees, decidees, gagnees]
     if recues == 0:
         return None
-    couleurs = ["#2a78d6", "#1c5cab", "#184f95", "#104281"]   # rampe ordinale, texte blanc lisible
+    couleurs = list(ORDINAL)[:len(etapes)]
     fig = _fig(330)
     fig.add_trace(go.Funnel(
         y=etapes, x=valeurs,
         text=[f"{fmt_int(v)}   ·   {fmt_pct(v / recues, 0)}" for v in valeurs],
         textinfo="text", textposition="inside",
-        insidetextfont=dict(color="#ffffff", size=12.5, family=FONT_STACK),
+        # L'encre est calculée segment par segment : la rampe change de clarté,
+        # une couleur de texte fixe finirait illisible sur l'une des marches.
+        insidetextfont=dict(color=[encre_lisible(c) for c in couleurs],
+                            size=12.5, family=FONT_STACK),
         marker=dict(color=couleurs, line=dict(color=SURFACE, width=2)),
-        connector=dict(fillcolor=_rgba(INK, 0.05), line=dict(color=GRID, width=1)),
+        connector=dict(fillcolor="rgba(0,0,0,0)", line=dict(color=GRID, width=1)),
         hovertemplate="%{y} : %{x} dossiers<extra></extra>",
     ))
     fig.update_layout(margin=dict(l=8, r=8, t=16, b=8))
@@ -1750,7 +1920,7 @@ def _bloc_succes_classe(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
         fig.add_vline(x=taux_global * 100, line=dict(color=INK, width=1),
                       annotation_text=f"moyenne du pôle : {fmt_pct(taux_global, 1)}",
                       annotation_position="top", annotation_font=dict(color=INK_2, size=11))
-    fig.update_xaxes(title_text="Taux de succès", ticksuffix=NBSP + "%")
+    fig.update_xaxes(title_text="Taux de succès", ticksuffix=ESP_UNITE + "%")
     # Les valeurs forment une colonne alignée à droite : elles ne peuvent
     # croiser ni les moustaches ni la ligne de moyenne.
     borne = float((agg["ic_haut"] * 100).max())
@@ -2051,19 +2221,22 @@ def _bloc_saisonnalite(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> 
     fig = _fig(max(260, 46 * len(pivot) + 110))
     fig.add_trace(go.Heatmap(
         z=z, x=MOIS_FR, y=[str(a) for a in pivot.index],
-        colorscale=[[i / (len(BLUE_SCALE) - 1), c] for i, c in enumerate(BLUE_SCALE)],
+        colorscale=[[i / (len(SEQUENTIEL) - 1), c] for i, c in enumerate(SEQUENTIEL)],
         xgap=2, ygap=2, hoverongaps=False,
         colorbar=dict(title=dict(text="Demandes", font=dict(size=11, color=INK_2)),
                       thickness=10, outlinewidth=0, tickfont=dict(size=11, color=INK_MUTED),
                       len=0.85),
         hovertemplate="%{x} %{y} : %{z:.0f} demandes<extra></extra>",
     ))
-    seuil = np.nanmax(z) * 0.50 if np.isfinite(np.nanmax(z)) else 0
+    maxi = np.nanmax(z) if np.isfinite(np.nanmax(z)) else 1.0
     for i, annee in enumerate(pivot.index):
         for j in range(12):
             if np.isfinite(z[i, j]):
+                # Encre déduite de la couleur réelle de la cellule : valable
+                # quel que soit le thème et quel que soit le sens de la rampe.
+                fond = couleur_rampe(SEQUENTIEL, z[i, j] / maxi if maxi else 0.0)
                 fig.add_annotation(x=MOIS_FR[j], y=str(annee), text=fmt_int(z[i, j]),
-                                   font=dict(size=11, color="#ffffff" if z[i, j] > seuil else INK))
+                                   font=dict(size=11, color=encre_lisible(fond)))
     fig.update_xaxes(showgrid=False, showline=False, ticks="")
     fig.update_yaxes(showgrid=False, showline=False, ticks="", autorange="reversed")
 
@@ -2118,7 +2291,7 @@ def _bloc_regression_delai(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict)
         xref="paper", yref="paper", x=0.99, y=0.06, xanchor="right", align="right",
         text=(f"délai ≈ {fmt_dec(reg.ordonnee, 1)} + {fmt_dec(reg.pente, 3)} × questions"
               f"<br>R² = {fmt_dec(reg.r2, 2)} · {fmt_p(reg.p_value)} · n = {fmt_int(reg.n)}"),
-        bgcolor="rgba(252,252,251,0.92)", bordercolor=AXIS, borderwidth=1, borderpad=6,
+        bgcolor=VOILE, bordercolor=AXIS, borderwidth=1, borderpad=6,
         font=dict(size=11.5, color=INK_2))
 
     par_dix = reg.pente * 10

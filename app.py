@@ -45,38 +45,43 @@ KW_BOUTON = _kw_largeur(st.button)
 SELECTION_DISPONIBLE = "on_select" in inspect.signature(st.plotly_chart).parameters
 
 # Architecture de l'information : chaque page répond à une question de pilotage.
+# Le produit est en DEUX parties. « Direction » se lit debout, en trois
+# minutes, et suffit à un dirigeant ; « Analyse » répond aux pourquoi et aux
+# combien exactement. Deux niveaux de navigation, pas cinq.
 PAGES: list[tuple[str, str, str, str]] = [
-    # (clé, libellé, groupe, sous-titre)
-    ("accueil", "Accueil", "Pilotage",
-     "Où en sont les appels d'offres, aujourd'hui."),
-    ("synthese", "Vue d'ensemble", "Pilotage",
-     "Où en est l'activité, et qu'est-ce qui demande votre attention."),
-    ("activite", "Activité", "Opérations",
+    # (clé, libellé, partie, sous-titre)
+    ("synthese", "Vue d'ensemble", "Direction",
+     "La décomposition de l'activité, ce qui a bougé ce trimestre, et ce que "
+     "l'effort commercial a rapporté."),
+    ("accueil", "Aujourd'hui", "Direction",
+     "L'état du carnet à l'instant : qui attend une décision, qui vient d'être "
+     "gagné, qui est à relancer."),
+    ("activite", "Activité", "Analyse",
      "Volumes reçus, capacité de traitement et délais."),
-    ("rfp", "Pipeline RFP", "Opérations",
+    ("rfp", "Pipeline RFP", "Analyse",
      "Appels d'offres : flux, résultats et valeur commerciale."),
-    ("dd", "Due diligence", "Opérations",
+    ("dd", "Due diligence", "Analyse",
      "Charge de due diligence par expertise et par géographie."),
-    ("aum", "Encours & gains", "Performance",
+    ("aum", "Encours & gains", "Analyse",
      "Ce que l'effort commercial rapporte réellement."),
-    ("esg", "ESG", "Performance",
+    ("esg", "ESG", "Analyse",
      "Poids de la composante ESG dans les questionnaires."),
-    ("insights", "Insights", "Intelligence",
+    ("insights", "Diagnostic", "Analyse",
      "Constats calculés sur la sélection courante, et analyse des causes."),
-    ("explorateur", "Explorateur", "Données",
+    ("explorateur", "Explorateur", "Analyse",
      "Du chiffre agrégé au dossier individuel."),
-    ("donnees", "Qualité & export", "Données",
+    ("donnees", "Qualité & export", "Analyse",
      "Journal d'import, définitions et rapport autonome."),
 ]
 LIBELLES_PAGES = {cle: libelle for cle, libelle, _, _ in PAGES}
-GROUPES = ["Pilotage", "Opérations", "Performance", "Intelligence", "Données"]
+GROUPES = ["Direction", "Analyse"]
 
 # Indicateurs mis en avant par page — la couche métrique les produit tous, la
 # page choisit ceux qui répondent à sa question.
 KPIS_PAR_PAGE = {
-    "accueil": [],                 # la page d'accueil a son propre relevé
-    "synthese": ["questionnaires", "dd", "rfp", "rfp_gagnes",
-                 "aum", "succes", "delai_dd", "delai_rfp"],
+    "accueil": [],                 # la page « Aujourd'hui » a son propre relevé
+    # Vue d'ensemble : quatre indicateurs, pas huit. Le reste est dans Analyse.
+    "synthese": ["questionnaires", "rfp", "succes", "aum"],
     "activite": ["questionnaires", "dd", "rfp", "questions",
                  "delai_dd", "delai_rfp", "sla", "esg"],
     "rfp": ["rfp", "rfp_gagnes", "succes", "pipeline", "aum", "delai_rfp"],
@@ -149,313 +154,367 @@ label, .stSelectbox label p, .stMultiSelect label p { color: var(--ink-2) !impor
 """
 
 
-def feuille_de_style() -> str:
-    # Le thème maison ne porte aucun halo : la sobriété est le sujet, et un
-    # dégradé posé sur un bleu de nuit de marque le salit.
-    if core.THEME == "maison":
-        halo = "none"
-    elif EST_SOMBRE:
-        halo = ("radial-gradient(900px 520px at 82% -12%, "
-                "color-mix(in srgb, var(--serie1) 11%, transparent), transparent 60%)")
-    else:
-        halo = ("radial-gradient(1100px 600px at 88% -18%, "
-                "color-mix(in srgb, var(--accent) 5%, transparent), transparent 62%)")
-    return f"""
-<style>
-{core.police_css()}
-:root {{
-  --plane:{core.PLANE}; --surface:{core.SURFACE}; --elevation:{core.ELEVATION};
-  --ink:{core.INK}; --ink-2:{core.INK_2}; --muted:{core.INK_MUTED};
-  --grid:{core.GRID}; --border:{core.BORDER}; --serie1:{core.SERIES[0]};
-  --serie2:{core.SERIES[1]}; --accent:{core.ACCENT}; --laiton:{core.ACCENT_2};
-  --bon:{core.TEXTE_BON}; --mauvais:{core.TEXTE_MAUVAIS};
-  --rayon:{core.RAYON}; --sur-accent:{core.SUR_ACCENT};
-  --neutre:{core.INK_MUTED}; --attente:{core.SERIES[0]};
-  --gagne:{core.STATUS_GOOD}; --perdu:{core.STATUS_CRITICAL};
-  --sans-suite:{core.STATUS_SERIOUS};
-}}
-html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {{
-  background: var(--plane); color: var(--ink); font-family: {core.FONT_STACK};
-}}
-[data-testid="stAppViewContainer"]::before {{
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0; background:{halo};
-}}
-[data-testid="stHeader"] {{ background: transparent; }}
-.block-container {{ padding: 1.1rem 2.2rem 4rem; max-width: 1640px; position: relative; z-index: 1; }}
-:focus-visible {{ outline: 2px solid var(--serie1); outline-offset: 2px; border-radius: 6px; }}
+# Feuille de style : jetons partagés avec core.py, puis le système lui-même.
+# Aucune valeur en dur ici — espacements, corps, rayons, ombres et courbes de
+# mouvement viennent tous de `core.jetons_css()`.
+BASE_CSS = r"""
+*,*::before,*::after{box-sizing:border-box}
+html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"]{
+  background:var(--plane);color:var(--ink);font-family:var(--police);
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  font-feature-settings:"cv05","ss01"}
 
-/* ------------------------------------------------------------ en-tête ----- */
-.entete {{ display:flex; align-items:flex-start; gap:22px; padding-bottom:14px;
-           margin-bottom:6px; border-bottom:1px solid var(--border); }}
-.entete__fil {{ font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
-                color:var(--muted); font-weight:650; }}
-.entete__titre {{ font-size:27px; font-weight:600; letter-spacing:-.028em; margin:4px 0 5px;
-                  line-height:1.1; color:var(--ink); }}
-.entete__sous {{ font-size:12.5px; color:var(--ink-2); max-width:78ch; }}
-.entete__meta {{ margin-left:auto; text-align:right; font-size:11px; color:var(--muted);
-                 line-height:1.8; white-space:nowrap; }}
-.entete__meta b {{ color:var(--ink-2); font-weight:600; }}
+/* Nappe d'ambiance : deux sources très basses, dans les teintes de la maison.
+   Fixée, sans pointer-events, sous tout le reste. */
+[data-testid="stAppViewContainer"]::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:var(--ambiance)}
+[data-testid="stHeader"]{background:transparent}
+.block-container{padding:var(--e5) var(--e6) var(--e9);max-width:1680px;
+  position:relative;z-index:1}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:var(--rayon-s)}
+::selection{background:color-mix(in srgb,var(--accent) 28%,transparent);color:var(--ink)}
 
-/* ------------------------------------------------------- filtres actifs --- */
-.chips {{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:2px 0 10px; }}
-.chip {{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:560;
-         padding:3px 9px; border-radius:6px; background:color-mix(in srgb, var(--serie1) 12%, transparent);
-         color:var(--ink); border:1px solid color-mix(in srgb, var(--serie1) 26%, transparent); }}
-.chip b {{ font-weight:650; color:var(--muted); font-size:9.5px; letter-spacing:.07em;
-           text-transform:uppercase; }}
-.chip--vide {{ background:transparent; border-color:var(--border); color:var(--muted); }}
+/* Barres de défilement : discrètes, accordées au thème. */
+*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 18%,transparent) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 14%,transparent);
+  border-radius:99px;border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ink) 26%,transparent);
+  background-clip:content-box}
+
+/* ---------------------------------------------------------- mouvement ----- */
+@keyframes surgir{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes apparaitre{from{opacity:0}to{opacity:1}}
+@keyframes luire{0%{background-position:-460px 0}100%{background-position:460px 0}}
+.surgir{animation:surgir var(--moyen) var(--sortie) both}
+.surgir-1{animation-delay:40ms}.surgir-2{animation-delay:80ms}
+.surgir-3{animation-delay:120ms}.surgir-4{animation-delay:160ms}
+
+/* --------------------------------------------------------- typographie ---- */
+.sur-titre{font-size:var(--t-xs);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);font-weight:700}
+.nav-groupe{font-size:var(--t-xs);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);font-weight:700;margin:0;padding:var(--e5) 0 var(--e3) 2px;
+  line-height:1}
+[data-testid="stSidebar"] .nav-groupe:first-of-type{padding-top:var(--e4)}
+.note-lecture{font-size:var(--t-s);color:var(--muted);border-left:2px solid var(--border);
+  padding-left:var(--e3);margin:var(--e4) 0 var(--e1);line-height:1.6;max-width:110ch}
+
+/* ------------------------------------------------------------- en-tête ---- */
+.entete{display:flex;align-items:flex-end;gap:var(--e5);padding:0 0 var(--e4);
+  margin-bottom:var(--e3);border-bottom:1px solid var(--border);animation:surgir var(--moyen) var(--sortie) both}
+.entete__titre{font-size:var(--t-3xl);font-weight:600;letter-spacing:-.032em;
+  margin:var(--e2) 0 6px;line-height:1.05;color:var(--ink)}
+.entete__sous{font-size:var(--t-m);color:var(--ink-2);max-width:78ch;line-height:1.55}
+.entete__meta{margin-left:auto;text-align:right;font-size:var(--t-s);color:var(--muted);
+  line-height:1.85;white-space:nowrap}
+.entete__meta b{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums}
+.entete__logo{width:52px;height:52px;flex:none;color:var(--accent)}
+.entete__logo svg{width:100%;height:100%;display:block}
+
+/* ------------------------------------------------------ filtres actifs ---- */
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:var(--e1) 0 var(--e3)}
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:var(--t-s);font-weight:560;
+  padding:4px 10px;border-radius:99px;background:color-mix(in srgb,var(--accent) 12%,transparent);
+  color:var(--ink);border:1px solid color-mix(in srgb,var(--accent) 24%,transparent)}
+.chip b{font-weight:700;color:var(--muted);font-size:9.5px;letter-spacing:.09em;
+  text-transform:uppercase}
+.chip--vide{background:transparent;border-color:var(--border);color:var(--muted)}
+
+/* ------------------------------------------------------------ exercices --- */
+.annees{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+a.annee{display:inline-flex;align-items:baseline;gap:7px;padding:7px 12px;
+  border-radius:99px;border:1px solid var(--border);background:var(--surface);
+  text-decoration:none;color:var(--ink-2);font-size:var(--t-m);
+  transition:border-color var(--rapide) var(--etat),color var(--rapide) var(--etat),
+             transform var(--rapide) var(--sortie)}
+a.annee:hover{color:var(--ink);border-color:color-mix(in srgb,var(--accent) 50%,transparent);
+  transform:translateY(-1px)}
+.annee b{font-weight:640;font-variant-numeric:tabular-nums;color:inherit}
+.annee__n{font-size:var(--t-xs);color:var(--muted);font-variant-numeric:tabular-nums}
+a.annee--actif{background:var(--accent);border-color:var(--accent);color:var(--sur-accent);
+  box-shadow:var(--ombre-1)}
+.annee--actif .annee__n{color:color-mix(in srgb,var(--sur-accent) 70%,transparent)}
 
 /* ---------------------------------------------------------- indicateurs --- */
-.kpis {{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }}
-.kpis + .kpis {{ margin-top:12px; }}
-@media (max-width:1400px) {{ .kpis {{ grid-template-columns:repeat(3, minmax(0,1fr)); }} }}
-@media (max-width:1100px) {{ .kpis {{ grid-template-columns:repeat(2, minmax(0,1fr)); }} }}
-a.kpi, div.kpi {{ display:block; background:var(--surface); border:1px solid var(--border);
-  border-radius:var(--rayon); padding:13px 15px 11px; text-decoration:none; color:inherit;
-  transition:border-color .16s ease, transform .16s ease; height:100%; }}
-a.kpi:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparent);
-               transform:translateY(-1px); }}
-.kpi__tete {{ display:flex; align-items:baseline; gap:8px; }}
-.kpi__label {{ font-size:10px; letter-spacing:.09em; text-transform:uppercase;
-               color:var(--muted); font-weight:650; }}
-.kpi__info {{ margin-left:auto; font-size:10px; color:var(--muted); opacity:.55; }}
-.kpi__corps {{ display:flex; align-items:flex-end; justify-content:space-between; gap:10px;
-               margin-top:7px; }}
-.kpi__valeur {{ font-size:25px; font-weight:600; letter-spacing:-.018em; line-height:1.05;
-                font-variant-numeric:tabular-nums; color:var(--ink); }}
-.kpi__bas {{ display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }}
-.kpi__detail {{ font-size:10.5px; color:var(--muted); line-height:1.4; }}
-.puce {{ display:inline-flex; gap:4px; font-size:10.5px; font-weight:650; padding:2px 7px;
-         border-radius:5px; white-space:nowrap; }}
-.puce--bon {{ background:color-mix(in srgb, var(--bon) 14%, transparent); color:var(--bon); }}
-.puce--mauvais {{ background:color-mix(in srgb, var(--mauvais) 14%, transparent); color:var(--mauvais); }}
-.puce--neutre {{ background:color-mix(in srgb, var(--ink) 7%, transparent); color:var(--ink-2); }}
-.note-lecture {{ font-size:11px; color:var(--muted); border-left:2px solid var(--border);
-                 padding-left:11px; margin:14px 0 4px; line-height:1.55; max-width:112ch; }}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--e3)}
+.kpis+.kpis{margin-top:var(--e3)}
+@media (max-width:1400px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:1040px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:620px){.kpis{grid-template-columns:1fr}}
+a.kpi,div.kpi{display:block;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--rayon);padding:var(--e4) var(--e4) var(--e3);text-decoration:none;
+  color:inherit;height:100%;box-shadow:var(--ombre-1);position:relative;overflow:hidden;
+  transition:box-shadow var(--moyen) var(--etat),border-color var(--moyen) var(--etat),
+             transform var(--moyen) var(--sortie)}
+a.kpi::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(420px 160px at 50% -40%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 70%);
+  opacity:0;transition:opacity var(--moyen) var(--etat)}
+a.kpi:hover{transform:translateY(-2px);box-shadow:var(--ombre-2);
+  border-color:color-mix(in srgb,var(--accent) 42%,transparent)}
+a.kpi:hover::after{opacity:1}
+.kpi__tete{display:flex;align-items:baseline;gap:var(--e2)}
+.kpi__label{font-size:var(--t-xs);letter-spacing:.11em;text-transform:uppercase;
+  color:var(--muted);font-weight:700}
+.kpi__info{margin-left:auto;font-size:var(--t-xs);color:var(--muted);opacity:.45}
+.kpi__corps{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--e3);
+  margin-top:var(--e2)}
+.kpi__valeur{font-size:var(--t-2xl);font-weight:600;letter-spacing:-.022em;line-height:1;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+.kpi__bas{display:flex;align-items:center;gap:var(--e2);margin-top:var(--e3);flex-wrap:wrap}
+.kpi__detail{font-size:var(--t-xs);color:var(--muted);line-height:1.45}
+.puce{display:inline-flex;gap:4px;font-size:var(--t-xs);font-weight:700;padding:3px 8px;
+  border-radius:99px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.puce--bon{background:color-mix(in srgb,var(--bon) 15%,transparent);color:var(--bon)}
+.puce--mauvais{background:color-mix(in srgb,var(--mauvais) 15%,transparent);color:var(--mauvais)}
+.puce--neutre{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink-2)}
 
 /* -------------------------------------------------------------- cartes ---- */
-div[data-testid="stVerticalBlockBorderWrapper"] {{
-  background:var(--surface); border:1px solid var(--border) !important; border-radius:var(--rayon);
-  transition:border-color .16s ease; }}
-[data-testid="stColumn"] > div,
-[data-testid="stColumn"] > div > [data-testid="stVerticalBlock"],
-[data-testid="stColumn"] div[data-testid="stVerticalBlockBorderWrapper"] {{ height:100%; }}
-.carte__titre {{ font-size:14.5px; font-weight:620; letter-spacing:-.012em; color:var(--ink); }}
-.carte__accroche {{ font-size:12px; color:var(--ink-2); margin:5px 0 2px; line-height:1.55; }}
-.carte__note {{ font-size:10.5px; color:var(--muted); line-height:1.5; margin-top:8px;
-                padding-top:8px; border-top:1px solid var(--border); }}
-.carte__clic {{ font-size:10px; color:var(--muted); margin-top:4px; }}
+div[data-testid="stVerticalBlockBorderWrapper"]{background:var(--surface);
+  border:1px solid var(--border)!important;border-radius:var(--rayon);
+  box-shadow:var(--ombre-1);
+  transition:box-shadow var(--moyen) var(--etat),border-color var(--moyen) var(--etat)}
+div[data-testid="stVerticalBlockBorderWrapper"]:hover{box-shadow:var(--ombre-2)}
+/* Une colonne prend par défaut la largeur de son contenu : un graphique Plotly
+   élargirait donc la ligne au-delà de l'écran sur un poste étroit. */
+[data-testid="stColumn"]{min-width:0}
+[data-testid="stColumn"]>div,
+[data-testid="stColumn"]>div>[data-testid="stVerticalBlock"],
+[data-testid="stColumn"] div[data-testid="stVerticalBlockBorderWrapper"]{height:100%}
+.carte__titre{font-size:var(--t-l);font-weight:620;letter-spacing:-.014em;color:var(--ink)}
+.carte__accroche{font-size:var(--t-m);color:var(--ink-2);margin:6px 0 2px;line-height:1.55}
+.carte__note{font-size:var(--t-xs);color:var(--muted);line-height:1.55;margin-top:var(--e3);
+  padding-top:var(--e3);border-top:1px solid var(--border)}
+.carte__clic{font-size:var(--t-xs);color:var(--muted);margin-top:var(--e1)}
+.carte--phare div[data-testid="stVerticalBlockBorderWrapper"]{box-shadow:var(--ombre-2)}
 
 /* ------------------------------------------------------------- insights --- */
-.alerte {{ background:color-mix(in srgb, var(--mauvais) 8%, var(--surface));
-           border:1px solid color-mix(in srgb, var(--mauvais) 28%, transparent);
-           border-left:3px solid var(--mauvais); border-radius:var(--rayon); padding:12px 15px;
-           font-size:12.5px; color:var(--ink); line-height:1.5; }}
-.insights {{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px;
-             margin-bottom:6px; }}
-@media (max-width:1240px) {{ .insights {{ grid-template-columns:repeat(2, minmax(0,1fr)); }} }}
-a.insight, div.insight {{ background:var(--surface); border:1px solid var(--border);
-            border-radius:var(--rayon); padding:15px 17px; height:100%; text-decoration:none;
-            color:inherit; display:flex; flex-direction:column;
-            border-left:3px solid var(--serie1); transition:border-color .16s ease; }}
-a.insight:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparent);
-                   border-left-color:var(--serie1); }}
-.insight__lien {{ margin-top:auto; padding-top:10px; font-size:11px; font-weight:600;
-                  color:var(--accent); }}
-.insight--alerte .insight__lien {{ color:var(--mauvais); }}
-.insight--alerte {{ border-left-color:var(--mauvais); }}
-.insight--positif {{ border-left-color:var(--bon); }}
-.insight__texte {{ font-size:13px; color:var(--ink); line-height:1.5; font-weight:520; }}
-.insight__appui {{ font-size:11px; color:var(--muted); margin-top:7px; }}
+.alerte{background:color-mix(in srgb,var(--mauvais) 9%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--mauvais) 26%,transparent);
+  border-left:3px solid var(--mauvais);border-radius:var(--rayon);
+  padding:var(--e3) var(--e4);font-size:var(--t-m);color:var(--ink);line-height:1.55}
+.insights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--e3);
+  margin-bottom:var(--e1)}
+@media (max-width:1180px){.insights{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.insights{grid-template-columns:1fr}}
+a.insight,div.insight{background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--rayon);padding:var(--e4);height:100%;text-decoration:none;color:inherit;
+  display:flex;flex-direction:column;border-left:3px solid var(--serie1);
+  box-shadow:var(--ombre-1);
+  transition:transform var(--moyen) var(--sortie),box-shadow var(--moyen) var(--etat),
+             border-color var(--moyen) var(--etat)}
+a.insight:hover{transform:translateY(-2px);box-shadow:var(--ombre-2);
+  border-color:color-mix(in srgb,var(--accent) 40%,transparent);border-left-color:var(--serie1)}
+.insight__lien{margin-top:auto;padding-top:var(--e3);font-size:var(--t-s);font-weight:620;
+  color:var(--accent)}
+.insight--alerte{border-left-color:var(--mauvais)}
+.insight--alerte .insight__lien{color:var(--mauvais)}
+.insight--positif{border-left-color:var(--bon)}
+.insight__texte{font-size:var(--t-l);color:var(--ink);line-height:1.5;font-weight:520;
+  letter-spacing:-.008em}
+.insight__appui{font-size:var(--t-s);color:var(--muted);margin-top:7px}
 
 /* -------------------------------------------------------- barre latérale -- */
-[data-testid="stSidebar"] {{ background:var(--surface); border-right:1px solid var(--border); }}
-[data-testid="stSidebar"] .block-container {{ padding-top:.9rem; }}
-/* Navigation dense : une liste de pages, pas un empilement de cartes. */
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{ gap:.22rem; }}
-[data-testid="stSidebar"] hr {{ margin:16px 0 12px; }}
-[data-testid="stSidebar"] [data-testid="stSelectbox"] {{ margin-top:2px; }}
-[data-testid="stSidebar"] .side-info {{ margin-top:14px; }}
-.marque__texte {{ font-size:12.5px; font-weight:640; letter-spacing:-.01em; line-height:1.2;
-                  color:var(--ink); }}
-.marque__texte span {{ display:block; font-size:9px; letter-spacing:.15em; text-transform:uppercase;
-  color:var(--muted); font-weight:600; margin-top:3px; }}
-.nav-groupe {{ font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
-               font-weight:700; margin:20px 0 6px; padding-left:2px; line-height:1; }}
-[data-testid="stSidebar"] .nav-groupe:first-of-type {{ margin-top:14px; }}
-.side-info {{ font-size:10.5px; color:var(--muted); line-height:1.65; }}
-.side-info b {{ color:var(--ink-2); font-weight:600; }}
+[data-testid="stSidebar"]{background:var(--verre);border-right:1px solid var(--border);
+  backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%)}
+[data-testid="stSidebar"] .block-container{padding-top:var(--e4)}
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:var(--e1)}
+[data-testid="stSidebar"] hr{margin:var(--e4) 0 var(--e3);border-color:var(--border)}
+.marque{display:flex;align-items:center;gap:var(--e3);padding:2px 0 var(--e3)}
+.marque__logo{width:34px;height:34px;flex:none;color:var(--accent)}
+.marque__logo svg{width:100%;height:100%;display:block}
+.marque__texte{font-size:var(--t-m);font-weight:640;letter-spacing:-.012em;line-height:1.2;
+  color:var(--ink)}
+.marque__texte span{display:block;font-size:9px;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin-top:4px}
+.side-info{font-size:var(--t-xs);color:var(--muted);line-height:1.7;margin-top:var(--e3)}
+.side-info b{color:var(--ink-2);font-weight:600}
 
-/* Navigation : des boutons déguisés en lignes, pour garder les groupes. */
-[data-testid="stSidebar"] .stButton button {{ width:100%; justify-content:flex-start;
-  text-align:left; padding:6px 10px; border-radius:7px; font-size:12.5px; font-weight:520;
-  border:1px solid transparent; background:transparent; color:var(--muted);
-  transition:background .16s ease, color .16s ease; box-shadow:none; }}
-[data-testid="stSidebar"] .stButton button:hover {{
-  background:color-mix(in srgb, var(--ink) 6%, transparent); color:var(--ink); }}
-[data-testid="stSidebar"] .stButton button[kind="primary"] {{
-  background:color-mix(in srgb, var(--accent) 10%, transparent); color:var(--accent);
-  font-weight:660; border-color:transparent;
-  box-shadow:inset 2px 0 0 var(--accent); border-radius:0 7px 7px 0; }}
-[data-testid="stSidebar"] .stButton button p {{ font-size:12.5px !important; }}
+/* Navigation : des lignes, pas des boutons — mais le confort d'un bouton. */
+[data-testid="stSidebar"] .stButton button{width:100%;justify-content:flex-start;
+  text-align:left;padding:8px 11px;border-radius:var(--rayon-s);font-size:var(--t-m);
+  font-weight:520;border:1px solid transparent;background:transparent;color:var(--muted);
+  box-shadow:none;transition:background var(--rapide) var(--etat),color var(--rapide) var(--etat),
+             padding-left var(--rapide) var(--sortie)}
+[data-testid="stSidebar"] .stButton button:hover{
+  background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink);padding-left:14px}
+[data-testid="stSidebar"] .stButton button[kind="primary"]{
+  background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);
+  font-weight:660;border-color:transparent;box-shadow:inset 2px 0 0 var(--accent);
+  border-radius:0 var(--rayon-s) var(--rayon-s) 0}
+[data-testid="stSidebar"] .stButton button p{font-size:var(--t-m)!important}
 
-/* --------------------------------------------------------------- divers --- */
-[data-testid="stExpander"] details {{ border:none !important; background:transparent; }}
-[data-testid="stExpander"] summary {{ font-size:11.5px; color:var(--muted); }}
-[data-testid="stExpander"] summary:hover {{ color:var(--ink-2); }}
-.stDownloadButton button, .block-container .stButton button {{ border-radius:8px;
-  font-size:12.5px; font-weight:600; border:1px solid var(--border);
-  background:var(--elevation); color:var(--ink); }}
-.block-container .stButton button[kind="primary"] {{ background:var(--accent);
-  border-color:var(--accent); color:var(--sur-accent); }}
-[data-testid="stAlert"], [data-testid="stAlertContainer"] {{
-  background:color-mix(in srgb, var(--ink) 5%, transparent) !important;
-  border:1px solid var(--border); border-radius:var(--rayon); color:var(--ink-2) !important; }}
-[data-testid="stAlert"] p, [data-testid="stAlertContainer"] p {{
-  font-size:12px !important; color:var(--ink-2) !important; }}
-[data-testid="stDataFrame"] {{ border:1px solid var(--border); border-radius:var(--rayon); }}
-[data-testid="stMetricValue"] {{ font-variant-numeric:tabular-nums; }}
-#MainMenu, footer, [data-testid="stAppDeployButton"] {{ display:none; }}
-{WIDGETS_CSS}
+/* ------------------------------------------------- boutons et contrôles --- */
+[data-testid="stExpander"] details{border:none!important;background:transparent}
+[data-testid="stExpander"] summary{font-size:var(--t-s);color:var(--muted);
+  transition:color var(--rapide) var(--etat)}
+[data-testid="stExpander"] summary:hover{color:var(--ink-2)}
+.stDownloadButton button,.block-container .stButton button{border-radius:var(--rayon-s);
+  font-size:var(--t-m);font-weight:600;border:1px solid var(--border);
+  background:var(--elevation);color:var(--ink);box-shadow:var(--ombre-1);
+  transition:transform var(--rapide) var(--sortie),box-shadow var(--rapide) var(--etat)}
+.stDownloadButton button:hover,.block-container .stButton button:hover{
+  transform:translateY(-1px);box-shadow:var(--ombre-2)}
+.stDownloadButton button:active,.block-container .stButton button:active{transform:translateY(0)}
+.block-container .stButton button[kind="primary"]{background:var(--accent);
+  border-color:var(--accent);color:var(--sur-accent)}
+[data-testid="stAlert"],[data-testid="stAlertContainer"]{
+  background:color-mix(in srgb,var(--ink) 5%,transparent)!important;
+  border:1px solid var(--border);border-radius:var(--rayon);color:var(--ink-2)!important}
+[data-testid="stAlert"] p,[data-testid="stAlertContainer"] p{
+  font-size:var(--t-m)!important;color:var(--ink-2)!important}
+[data-testid="stDataFrame"]{border:1px solid var(--border);border-radius:var(--rayon);
+  overflow:hidden}
+[data-testid="stMetricValue"]{font-variant-numeric:tabular-nums}
+#MainMenu,footer,[data-testid="stAppDeployButton"]{display:none}
 
-/* ======================================================= page d'accueil ====
-   Direction : surfaces plates, filets d'un pixel qui dessinent la grille,
-   micro-libellés en capitales espacées, chiffres tabulaires larges. Aucune
-   ombre, aucun dégradé, aucun angle mou : la hiérarchie tient au contraste
-   typographique et au vide, pas à la décoration. */
-.marque {{ display:flex; align-items:center; gap:11px; padding:2px 0 10px; }}
-.marque__logo {{ width:34px; height:34px; flex:none; color:var(--laiton); }}
-.marque__logo svg {{ width:100%; height:100%; display:block; }}
+/* Segmented control : une vraie pastille coulissante. */
+[data-testid="stSegmentedControl"] button{transition:background var(--rapide) var(--etat),
+  color var(--rapide) var(--etat)}
 
-.hero {{ display:flex; align-items:center; gap:22px; padding:2px 0 22px;
-         border-bottom:1px solid var(--border); margin-bottom:18px; }}
-.hero__logo {{ width:56px; height:56px; flex:none; color:var(--laiton); }}
-.hero__logo svg {{ width:100%; height:100%; display:block; }}
-.hero__maison {{ font-size:10px; letter-spacing:.22em; text-transform:uppercase;
-                 color:var(--laiton); font-weight:700; }}
-.hero__titre {{ font-size:31px; font-weight:600; letter-spacing:-.032em; line-height:1.08;
-                margin:9px 0 6px; color:var(--ink); }}
-.hero__sous {{ font-size:12.5px; color:var(--ink-2); max-width:80ch; }}
-.hero__meta {{ margin-left:auto; text-align:right; font-size:11px; color:var(--muted);
-               line-height:1.85; white-space:nowrap; }}
-.hero__meta b {{ color:var(--ink-2); font-weight:600; font-variant-numeric:tabular-nums; }}
+/* ------------------------------------------------------------- squelette -- */
+.squelette{border-radius:var(--rayon);background:linear-gradient(90deg,
+  color-mix(in srgb,var(--ink) 5%,transparent) 0%,
+  color-mix(in srgb,var(--ink) 10%,transparent) 50%,
+  color-mix(in srgb,var(--ink) 5%,transparent) 100%);
+  background-size:460px 100%;animation:luire 1.25s linear infinite}
+
+/* ---------------------------------------------------------- responsive ---- */
+@media (max-width:900px){
+  .block-container{padding:var(--e4) var(--e4) var(--e8)}
+  .entete{flex-wrap:wrap;gap:var(--e3)}
+  .entete__meta{margin-left:0;text-align:left}
+  .entete__titre{font-size:var(--t-2xl)}
+  .annees{justify-content:flex-start}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+}
+"""
+
+
+# Composants propres aux pages de direction : le relevé, le ruban du carnet,
+# les registres nommés, la bande de mix.
+ACCUEIL_CSS = r"""
+.hero{display:flex;align-items:center;gap:var(--e5);padding:0 0 var(--e5);
+  border-bottom:1px solid var(--border);margin-bottom:var(--e4);
+  animation:surgir var(--moyen) var(--sortie) both}
+.hero__logo{width:58px;height:58px;flex:none;color:var(--accent)}
+.hero__logo svg{width:100%;height:100%;display:block}
+.hero__maison{font-size:var(--t-xs);letter-spacing:.22em;text-transform:uppercase;
+  color:var(--or);font-weight:700}
+.hero__titre{font-size:var(--t-3xl);font-weight:600;letter-spacing:-.034em;line-height:1.05;
+  margin:var(--e2) 0 7px;color:var(--ink)}
+.hero__sous{font-size:var(--t-m);color:var(--ink-2);max-width:78ch;line-height:1.55}
+.hero__meta{margin-left:auto;text-align:right;font-size:var(--t-s);color:var(--muted);
+  line-height:1.9;white-space:nowrap}
+.hero__meta b{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums}
 
 /* Relevé : une seule surface, des filets pour séparer — pas quatre cartes. */
-.releve {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); background:var(--surface);
-           border:1px solid var(--border); border-radius:var(--rayon); overflow:hidden; }}
-@media (max-width:1100px) {{ .releve {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
-.releve > div {{ padding:17px 20px 16px; border-left:1px solid var(--border); }}
-.releve > div:first-child {{ border-left:0; }}
-.releve__label {{ font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
-                  color:var(--muted); font-weight:700; }}
-.releve__valeur {{ font-size:29px; font-weight:600; letter-spacing:-.03em; line-height:1;
-                   margin-top:11px; font-variant-numeric:tabular-nums; color:var(--ink); }}
-.releve__valeur em {{ font-style:normal; font-size:16px; color:var(--muted);
-                      letter-spacing:-.01em; margin-left:3px; }}
-.releve__valeur--or {{ color:var(--laiton); }}
-.releve__detail {{ font-size:10.5px; color:var(--muted); margin-top:9px; line-height:1.45; }}
+.releve{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--rayon);overflow:hidden;
+  box-shadow:var(--ombre-1);animation:surgir var(--moyen) var(--sortie) both;
+  animation-delay:40ms}
+@media (max-width:1040px){.releve{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:620px){.releve{grid-template-columns:1fr}}
+.releve>div{padding:var(--e4) var(--e5);border-left:1px solid var(--border);
+  transition:background var(--moyen) var(--etat)}
+.releve>div:first-child{border-left:0}
+.releve>div:hover{background:var(--elevation)}
+.releve__label{font-size:var(--t-xs);letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);font-weight:700}
+.releve__valeur{font-size:var(--t-3xl);font-weight:600;letter-spacing:-.034em;line-height:1;
+  margin-top:var(--e3);font-variant-numeric:tabular-nums;color:var(--ink)}
+.releve__valeur--or{color:var(--or)}
+.releve__detail{font-size:var(--t-xs);color:var(--muted);margin-top:var(--e2);line-height:1.5}
 
 /* Le ruban : tout le carnet d'appels d'offres sur une ligne. */
-.ruban {{ display:flex; gap:2px; height:9px; margin-top:22px; }}
-.ruban i {{ display:block; border-radius:1px; }}
-.ruban-legende {{ display:flex; flex-wrap:wrap; gap:7px 26px; margin-top:13px; }}
-.ruban-legende div {{ display:flex; align-items:center; gap:8px; font-size:11.5px; }}
-.ruban-legende i {{ width:8px; height:8px; border-radius:2px; flex:none; }}
-.ruban-legende em {{ font-style:normal; font-weight:650; color:var(--ink);
-                     font-variant-numeric:tabular-nums; }}
-.ruban-legende span {{ color:var(--muted); }}
+.ruban{display:flex;gap:2px;height:10px;margin-top:var(--e5)}
+.ruban i{display:block;border-radius:2px;transition:filter var(--rapide) var(--etat)}
+.ruban:hover i{filter:saturate(.55)}
+.ruban i:hover{filter:none}
+.ruban-legende{display:flex;flex-wrap:wrap;gap:var(--e2) var(--e6);margin-top:var(--e3)}
+.ruban-legende div{display:flex;align-items:center;gap:var(--e2);font-size:var(--t-s)}
+.ruban-legende i{width:8px;height:8px;border-radius:2px;flex:none}
+.ruban-legende em{font-style:normal;font-weight:660;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.ruban-legende span{color:var(--muted)}
 
-/* Registres : qui est en attente, qui est gagné, qui est perdu. */
-.registres {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px;
-              margin-top:26px; }}
-@media (max-width:1150px) {{ .registres {{ grid-template-columns:1fr; }} }}
-.registre {{ background:var(--surface); border:1px solid var(--border);
-             border-radius:var(--rayon); display:flex; flex-direction:column; overflow:hidden; }}
-.registre__tete {{ display:flex; align-items:center; gap:9px; padding:13px 16px 12px;
-                   border-bottom:1px solid var(--border); }}
-.registre__pastille {{ width:8px; height:8px; border-radius:2px; flex:none; }}
-.registre__titre {{ font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
-                    font-weight:700; color:var(--ink-2); }}
-.registre__n {{ margin-left:auto; font-size:12px; font-weight:650; color:var(--ink);
-                font-variant-numeric:tabular-nums; }}
-.registre__colonnes {{ display:flex; justify-content:space-between; padding:8px 16px 7px;
-  font-size:9px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
-  font-weight:650; border-bottom:1px solid
-  color-mix(in srgb, var(--border) 55%, transparent); }}
-.registre__colonnes + a.ligne {{ border-top:0; }}
-a.ligne {{ display:flex; align-items:flex-start; gap:12px; padding:9px 16px;
-           text-decoration:none; color:inherit;
-           border-top:1px solid color-mix(in srgb, var(--border) 55%, transparent);
-           transition:background .14s ease; }}
-.registre a.ligne:first-of-type {{ border-top:0; }}
-a.ligne:hover {{ background:var(--elevation); }}
-.ligne__nom {{ display:flex; flex-direction:column; gap:3px; min-width:0; flex:1; }}
-.ligne__nom b {{ font-size:12.5px; font-weight:560; color:var(--ink); overflow:hidden;
-                 text-overflow:ellipsis; white-space:nowrap; }}
-.ligne__meta {{ font-size:10.5px; color:var(--muted); overflow:hidden;
-                text-overflow:ellipsis; white-space:nowrap; }}
-.ligne__val {{ font-size:12px; font-variant-numeric:tabular-nums; color:var(--ink-2);
-               white-space:nowrap; text-align:right; padding-top:1px; }}
-.ligne__val--alerte {{ color:var(--mauvais); font-weight:650; }}
-.ligne__val em {{ font-style:normal; display:block; font-size:10.5px; color:var(--muted);
-                  margin-top:3px; }}
-.registre__pied {{ margin-top:auto; padding:11px 16px; border-top:1px solid var(--border); }}
-.registre__pied a {{ font-size:11px; font-weight:620; color:var(--accent);
-                     text-decoration:none; }}
-.registre__pied a:hover {{ text-decoration:underline; }}
-.registre__vide {{ padding:22px 16px; font-size:12px; color:var(--muted); line-height:1.5; }}
-.registre--large {{ margin-top:12px; }}
-.registre--large .lignes {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }}
-@media (max-width:1150px) {{ .registre--large .lignes {{ grid-template-columns:1fr; }} }}
-.registre--large .lignes > a.ligne:nth-child(2) {{ border-top:0; }}
-.registre--large .lignes > a.ligne:nth-child(odd) {{ border-right:1px solid
-                          color-mix(in srgb, var(--border) 55%, transparent); }}
+/* Registres : qui attend, qui est gagné, qui est perdu. */
+.registres{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--e3);
+  margin-top:var(--e6)}
+@media (max-width:1150px){.registres{grid-template-columns:1fr}}
+.registre{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
+  display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--ombre-1);
+  transition:box-shadow var(--moyen) var(--etat)}
+.registre:hover{box-shadow:var(--ombre-2)}
+.registre__tete{display:flex;align-items:center;gap:var(--e2);padding:var(--e3) var(--e4);
+  border-bottom:1px solid var(--border)}
+.registre__pastille{width:8px;height:8px;border-radius:2px;flex:none}
+.registre__titre{font-size:var(--t-xs);letter-spacing:.15em;text-transform:uppercase;
+  font-weight:700;color:var(--ink-2)}
+.registre__n{margin-left:auto;font-size:var(--t-m);font-weight:660;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.registre__colonnes{display:flex;justify-content:space-between;padding:var(--e2) var(--e4) 7px;
+  font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  font-weight:700;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent)}
+.registre__colonnes+a.ligne{border-top:0}
+a.ligne{display:flex;align-items:flex-start;gap:var(--e3);padding:var(--e2) var(--e4);
+  text-decoration:none;color:inherit;
+  border-top:1px solid color-mix(in srgb,var(--border) 55%,transparent);
+  transition:background var(--rapide) var(--etat),padding-left var(--rapide) var(--sortie)}
+.registre a.ligne:first-of-type{border-top:0}
+a.ligne:hover{background:var(--elevation);padding-left:var(--e5)}
+.ligne__nom{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.ligne__nom b{font-size:var(--t-m);font-weight:560;color:var(--ink);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.ligne__meta{font-size:var(--t-xs);color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.ligne__val{font-size:var(--t-m);font-variant-numeric:tabular-nums;color:var(--ink-2);
+  white-space:nowrap;text-align:right;padding-top:1px}
+.ligne__val--alerte{color:var(--mauvais);font-weight:660}
+.ligne__val em{font-style:normal;display:block;font-size:var(--t-xs);color:var(--muted);
+  margin-top:3px}
+.registre__pied{margin-top:auto;padding:var(--e3) var(--e4);border-top:1px solid var(--border)}
+.registre__pied a{font-size:var(--t-s);font-weight:620;color:var(--accent);text-decoration:none;
+  border-bottom:1px solid transparent;transition:border-color var(--rapide) var(--etat)}
+.registre__pied a:hover{border-bottom-color:var(--accent)}
+.registre__vide{padding:var(--e5) var(--e4);font-size:var(--t-m);color:var(--muted);
+  line-height:1.55}
+.registre--large{margin-top:var(--e3)}
+.registre--large .lignes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:1150px){.registre--large .lignes{grid-template-columns:1fr}}
+.registre--large .lignes>a.ligne:nth-child(2){border-top:0}
+.registre--large .lignes>a.ligne:nth-child(odd){
+  border-right:1px solid color-mix(in srgb,var(--border) 55%,transparent)}
 
-/* Bande d'exercices : la rétrospective annuelle, en tête de vue d'ensemble. */
-.annees {{ display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px;
-           margin:2px 0 18px; }}
-@media (max-width:1240px) {{ .annees {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} }}
-@media (max-width:640px) {{ .annees {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
-a.annee {{ display:block; padding:12px 14px 11px; background:var(--surface);
-  border:1px solid var(--border); border-radius:var(--rayon); text-decoration:none;
-  color:inherit; transition:border-color .16s ease, transform .16s ease; }}
-a.annee:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparent);
-                 transform:translateY(-1px); }}
-.annee b {{ display:block; font-size:19px; font-weight:620; letter-spacing:-.022em;
-            line-height:1.1; font-variant-numeric:tabular-nums; color:var(--ink); }}
-.annee__n {{ display:block; font-size:10.5px; color:var(--muted); margin-top:5px;
-             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-.annee__barre {{ display:block; height:4px; margin-top:10px; border-radius:2px;
-  background:color-mix(in srgb, var(--ink) 9%, transparent); overflow:hidden; }}
-.annee__barre i {{ display:block; height:100%; background:var(--serie1); border-radius:2px; }}
-a.annee--actif {{ background:var(--accent); border-color:var(--accent); color:var(--sur-accent); }}
-.annee--actif b {{ color:var(--sur-accent); }}
-.annee--actif .annee__n {{ color:color-mix(in srgb, var(--sur-accent) 74%, transparent); }}
-.annee--actif .annee__barre {{ background:color-mix(in srgb, var(--sur-accent) 24%, transparent); }}
-.annee--actif .annee__barre i {{ background:var(--sur-accent); }}
-
-/* Bande due diligence : le détail RFI / DDQ, à l'écran seulement. */
-.bande {{ background:var(--surface); border:1px solid var(--border);
-          border-radius:var(--rayon); padding:16px 20px 18px; margin-top:26px; }}
-.bande__tete {{ display:flex; align-items:baseline; gap:12px; margin-bottom:15px; }}
-.bande__titre {{ font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
-                 font-weight:700; color:var(--ink-2); }}
-.bande__note {{ margin-left:auto; font-size:10.5px; color:var(--muted); }}
-.bande__ligne {{ display:grid; grid-template-columns:120px 1fr 92px; align-items:center;
-                 gap:14px; padding:6px 0; }}
-.bande__nom {{ font-size:12.5px; color:var(--ink); }}
-.bande__piste {{ height:8px; background:color-mix(in srgb, var(--ink) 7%, transparent);
-                 border-radius:2px; overflow:hidden; }}
-.bande__piste i {{ display:block; height:100%; border-radius:2px; }}
-.bande__val {{ font-size:12px; text-align:right; font-variant-numeric:tabular-nums;
-               color:var(--ink-2); }}
-.bande__val em {{ font-style:normal; color:var(--muted); font-size:10.5px; margin-left:6px; }}
-
-@media (prefers-reduced-motion: reduce) {{
-  *, *::before, *::after {{ transition:none !important; animation:none !important; }}
-}}
-</style>
+/* Bande de mix : le détail RFI / DDQ, à l'écran seulement. */
+.bande{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
+  padding:var(--e4) var(--e5) var(--e5);margin-top:var(--e6);box-shadow:var(--ombre-1)}
+.bande__tete{display:flex;align-items:baseline;gap:var(--e3);margin-bottom:var(--e4)}
+.bande__titre{font-size:var(--t-xs);letter-spacing:.15em;text-transform:uppercase;
+  font-weight:700;color:var(--ink-2)}
+.bande__note{margin-left:auto;font-size:var(--t-xs);color:var(--muted)}
+.bande__ligne{display:grid;grid-template-columns:130px 1fr 96px;align-items:center;
+  gap:var(--e4);padding:6px 0}
+.bande__nom{font-size:var(--t-m);color:var(--ink)}
+.bande__piste{height:8px;background:color-mix(in srgb,var(--ink) 7%,transparent);
+  border-radius:99px;overflow:hidden}
+.bande__piste i{display:block;height:100%;border-radius:99px;
+  transition:width var(--lent) var(--sortie)}
+.bande__val{font-size:var(--t-m);text-align:right;font-variant-numeric:tabular-nums;
+  color:var(--ink-2)}
+.bande__val em{font-style:normal;color:var(--muted);font-size:var(--t-xs);margin-left:7px}
+@media (max-width:700px){.bande__ligne{grid-template-columns:96px 1fr 76px;gap:var(--e3)}}
 """
+
+
+def feuille_de_style() -> str:
+    """La police, les jetons du thème actif, puis le système lui-même."""
+    return ("<style>" + core.police_css() + core.jetons_css()
+            + BASE_CSS + ACCUEIL_CSS + WIDGETS_CSS + "</style>")
 
 
 st.markdown(feuille_de_style(), unsafe_allow_html=True)
@@ -490,6 +549,19 @@ def sparkline(valeurs: list[float], largeur: int = 96, hauteur: int = 24) -> str
 @st.cache_data(show_spinner=False)
 def _logo() -> str:
     return core.logo_svg()
+
+
+def pluriel(n: int, mot: str, forme: str | None = None) -> str:
+    """« 1 dossier », « 7 dossiers » — le produit n'écrit jamais « dossier(s) »."""
+    return core.pluriel(n, mot, forme)
+
+
+def lien(page: str, **parametres: str) -> str:
+    """URL interne portant un filtre : c'est ce que consomme `_etat_depuis_url`.
+    Chaque ligne cliquable du produit passe par là, donc chaque état est
+    partageable par simple copie du lien."""
+    suite = "".join(f"&{c}={quote(str(v))}" for c, v in parametres.items())
+    return f"?page={page}{suite}"
 
 
 def marque_html(classe: str) -> str:
@@ -623,9 +695,9 @@ def bornes_periode(choix: str) -> tuple[dt.date, dt.date]:
 #  ÉTAT — page dans l'URL, filtres en session
 # =============================================================================
 def page_courante() -> str:
-    demandee = st.query_params.get("page", st.session_state.get("page", "accueil"))
+    demandee = st.query_params.get("page", st.session_state.get("page", "synthese"))
     if demandee not in LIBELLES_PAGES:
-        demandee = "accueil"
+        demandee = "synthese"
     st.session_state["page"] = demandee
     return demandee
 
@@ -869,6 +941,33 @@ analyse = core.build_analysis(df, filtres, rapport, df_precedent,
                                        "esg_mode": st.session_state.get("esg_mode", "part")})
 
 
+def bande_annees_html() -> str:
+    """La rétrospective se lit par exercice, pas en mois glissants.
+
+    Rendue comme du CHROME, dans l'en-tête, à droite du titre : un sélecteur a
+    sa place dans la barre de commande, pas au-dessus du contenu qu'il pilote.
+    Cliquer un exercice change la fenêtre GLOBALE — il n'y a pas deux notions
+    de période dans le produit.
+    """
+    sans_periode = core.Filters(date_min=DATE_MIN, date_max=DATE_MAX, dims=filtres.dims)
+    base = core.filter_data(df_complet, sans_periode)
+    volumes = (base.groupby(base["date_reception"].dt.year).size() if not base.empty
+               else pd.Series(dtype="int64"))
+    courant = (st.session_state.get(f"periode_{st.session_state.get('generation', 0)}")
+               or "Historique complet")
+
+    def pastille(libelle: str, cle: str, n: int) -> str:
+        actif = " annee--actif" if courant == cle else ""
+        return (f"<a class='annee{actif}' href='{lien('synthese', periode=cle)}' "
+                f"target='_self' title='{core.pluriel(n, 'questionnaire')}'>"
+                f"<b>{escape(libelle)}</b>"
+                f"<span class='annee__n'>{core.fmt_int(n)}</span></a>")
+
+    pastilles = [pastille(str(a), str(a), int(volumes.get(a, 0))) for a in ANNEES]
+    pastilles.append(pastille("Tout", "Historique complet", len(base)))
+    return f"<div class='annees'>{''.join(pastilles)}</div>"
+
+
 # =============================================================================
 #  EN-TÊTE DE PAGE
 # =============================================================================
@@ -898,19 +997,23 @@ with zone_entete:
             </div>
             """, unsafe_allow_html=True)
     else:
+        # Sur la vue d'ensemble, la droite de l'en-tête porte le sélecteur
+        # d'exercice : le contenu commence donc par l'arbre, pas par un réglage.
+        droite = (bande_annees_html() if PAGE == "synthese" else
+                  f"""<div class="entete__meta">
+                <b>{core.fmt_int(len(df))}</b> questionnaires dans la sélection<br>
+                {analyse.periode}<br>
+                Données arrêtées au {core.fmt_date(DATE_MAX)}
+              </div>""")
         st.markdown(
             f"""
             <div class="entete">
               <div>
-                <div class="entete__fil">{groupe_page}</div>
+                <div class="sur-titre">{groupe_page}</div>
                 <div class="entete__titre">{titre_page}</div>
                 <div class="entete__sous">{sous_titre}</div>
               </div>
-              <div class="entete__meta">
-                <b>{core.fmt_int(len(df))}</b> questionnaires dans la sélection<br>
-                {analyse.periode}<br>
-                Données arrêtées au {core.fmt_date(DATE_MAX)}
-              </div>
+              <div style="margin-left:auto;text-align:right">{droite}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -981,6 +1084,14 @@ def _traiter_clic(bloc: core.Block, evenement) -> None:
         st.rerun()
 
 
+def afficher_bloc_par_cle(cle: str) -> None:
+    """Affiche un bloc nommé, s'il a pu être construit. Une page de direction
+    compose ses blocs à la main ; une page d'analyse prend toute sa section."""
+    bloc = next((b for b in analyse.blocs if b.cle == cle), None)
+    if bloc is not None:
+        afficher_bloc(bloc)
+
+
 def afficher_section(cle: str) -> None:
     """Deux colonnes par défaut, pleine largeur pour les blocs qui la méritent."""
     attente: list[core.Block] = []
@@ -1040,18 +1151,6 @@ COULEURS_COMPARTIMENT = {
 JOURS_ALERTE = 120          # au-delà, une décision qui tarde devient une relance
 
 
-def _pluriel(n: int, mot: str, pluriel: str | None = None) -> str:
-    """« 1 dossier », « 7 dossiers » — un produit qui écrit « dossier(s) » se lit
-    comme un formulaire."""
-    return f"{core.fmt_int(n)} {mot if abs(n) < 2 else (pluriel or mot + 's')}"
-
-
-def _lien(page: str, **parametres: str) -> str:
-    """URL interne portant un filtre : c'est ce que consomme `_etat_depuis_url`."""
-    suite = "".join(f"&{c}={quote(str(v))}" for c, v in parametres.items())
-    return f"?page={page}{suite}"
-
-
 def _meta(ligne: pd.Series, *champs: str) -> str:
     valeurs = [str(ligne[c]) for c in champs
                if c in ligne.index and pd.notna(ligne[c])
@@ -1066,7 +1165,7 @@ def _ligne_dossier(ligne: pd.Series, valeur: str, appui: str = "",
     client = str(ligne.get("client") or "Client non renseigné")
     classe = " ligne__val--alerte" if alerte else ""
     appui_html = f"<em>{escape(appui)}</em>" if appui else ""
-    return (f"<a class='ligne' href='{_lien('explorateur', q=client)}' target='_self'>"
+    return (f"<a class='ligne' href='{lien('explorateur', q=client)}' target='_self'>"
             f"<span class='ligne__nom'><b>{escape(client)}</b>"
             f"<span class='ligne__meta'>{meta}</span></span>"
             f"<span class='ligne__val{classe}'>{escape(valeur)}{appui_html}</span></a>")
@@ -1098,7 +1197,7 @@ def _releve(etat: core.Carnet) -> None:
          f"{core.fmt_int(etat.n('en_cours'))} en rédaction · "
          f"{core.fmt_int(etat.n('en_attente'))} remis, décision attendue"),
         ("Encours en jeu", core.fmt_dec(en_jeu, 0, "M€"), "",
-         f"sur {_pluriel(etat.vivants, 'dossier')} non tranché"
+         f"sur {pluriel(etat.vivants, 'dossier')} non tranché"
          + ("s" if etat.vivants > 1 else "")),
         ("Taux de succès", core.fmt_pct(taux, 1), "",
          f"{core.fmt_int(gagnes)} gagnés sur {core.fmt_int(tranches)} tranchés · "
@@ -1158,7 +1257,7 @@ def _registres(etat: core.Carnet) -> None:
         if not n:
             return "<span class='registre__vide' style='padding:0'>—</span>"
         quantite = "le" if n == 1 else f"les {core.fmt_int(n)}"
-        return (f"<a href='{_lien('explorateur', statut=cle_statut)}' target='_self'>"
+        return (f"<a href='{lien('explorateur', statut=cle_statut)}' target='_self'>"
                 f"Voir {quantite} {mot if n == 1 else mot + 's'} →</a>")
 
     st.markdown("<div class='registres'>" + "".join([
@@ -1200,7 +1299,7 @@ def _relances(etat: core.Carnet) -> None:
         "<span class='registre__titre'>À relancer</span>"
         f"<span class='registre__n'>{core.fmt_int(len(urgents))}</span></div>"
         f"<div class='lignes'>{''.join(lignes)}</div>"
-        f"<div class='registre__pied'><a href='{_lien('explorateur')}' target='_self'>"
+        f"<div class='registre__pied'><a href='{lien('explorateur')}' target='_self'>"
         f"Ouvrir la liste complète dans l'explorateur →</a>"
         f"<span class='ligne__meta' style='display:inline;margin-left:10px'>"
         f"délai cible dépassé, ou décision attendue depuis plus de "
@@ -1253,66 +1352,28 @@ def page_accueil() -> None:
         cartes_insights(analyse.insights[:3])
 
 
-def bande_annees() -> None:
-    """La rétrospective de la manager se lit par exercice, pas en mois glissants.
-
-    Chaque tuile porte son volume et une barre proportionnelle : la barre est
-    une donnée — le nombre de questionnaires de l'année, sur le périmètre
-    filtré — et non un décor. Cliquer une tuile change la fenêtre globale ;
-    il n'y a pas deux notions de période dans le produit.
-    """
-    sans_periode = core.Filters(date_min=DATE_MIN, date_max=DATE_MAX, dims=filtres.dims)
-    base = core.filter_data(df_complet, sans_periode)
-    volumes = base.groupby(base["date_reception"].dt.year).size() if not base.empty \
-        else pd.Series(dtype="int64")
-    maxi = float(volumes.max()) if len(volumes) else 1.0
-    courant = st.session_state.get(
-        f"periode_{st.session_state.get('generation', 0)}") or "Historique complet"
-
-    def tuile(libelle: str, cle: str, n: int, largeur: float) -> str:
-        actif = " annee--actif" if courant == cle else ""
-        return (f"<a class='annee{actif}' href='{_lien('synthese', periode=cle)}' "
-                f"target='_self'><b>{escape(libelle)}</b>"
-                f"<span class='annee__n'>{core.pluriel(n, 'questionnaire')}</span>"
-                f"<span class='annee__barre'><i style='width:{largeur:.1f}%'></i></span></a>")
-
-    tuiles = [tuile(str(a), str(a), int(volumes.get(a, 0)),
-                    int(volumes.get(a, 0)) / maxi * 100) for a in ANNEES]
-    tuiles.append(tuile("Tout l'historique", "Historique complet", len(base), 100.0))
-    st.markdown(f"<div class='annees'>{''.join(tuiles)}</div>", unsafe_allow_html=True)
-
-
 def page_synthese() -> None:
-    bande_annees()
+    """Partie I — la rétrospective. Quatre blocs, pas un de plus.
+
+    L'ARBRE D'ABORD : c'est la question du comité — combien arrive, de quelle
+    nature, et que deviennent les appels d'offres. Tout le reste la précise.
+    """
+    afficher_bloc_par_cle("decomposition")
+    afficher_bloc_par_cle("trimestre")
+
     bandeau_kpis(analyse, KPIS_PAR_PAGE["synthese"])
     st.markdown(f"<div class='note-lecture'>{core.NOTE_CENSURE}</div>",
                 unsafe_allow_html=True)
 
-    urgents = core.dossiers_a_surveiller(df)
-    if len(urgents):
-        gauche, droite = st.columns([3, 1], gap="medium", vertical_alignment="center") \
-            if "vertical_alignment" in inspect.signature(st.columns).parameters \
-            else st.columns([3, 1], gap="medium")
-        with gauche:
-            montant = float(urgents["montant_potentiel"].sum(skipna=True))
-            st.markdown(
-                f"<div class='alerte'><b>{core.pluriel(len(urgents), 'dossier')} "
-                f"{'demande' if len(urgents) < 2 else 'demandent'} une relance</b> — délai "
-                f"cible dépassé ou décision attendue depuis plus de quatre mois"
-                + (f", {core.fmt_dec(montant, 0, 'M€')} d'encours concernés." if montant else ".")
-                + "</div>", unsafe_allow_html=True)
-        with droite:
-            if st.button("Ouvrir dans l'explorateur", **KW_BOUTON):
-                st.session_state["explorateur_vue"] = "attention"
-                aller_a("explorateur")
-
-    selecteur_granularite()
-    afficher_section("synthese")
-
     if analyse.insights:
-        st.markdown("<div class='nav-groupe' style='margin-top:20px'>Constats</div>",
+        st.markdown("<div class='nav-groupe'>Ce qu'il faut retenir</div>",
                     unsafe_allow_html=True)
         cartes_insights(analyse.insights[:3])
+
+    st.markdown("<div class='nav-groupe'>La tendance longue</div>", unsafe_allow_html=True)
+    selecteur_granularite()
+    afficher_bloc_par_cle("flux_famille")
+    afficher_bloc_par_cle("mandats_remportes")
 
 
 def cartes_insights(insights: list[core.Insight]) -> None:

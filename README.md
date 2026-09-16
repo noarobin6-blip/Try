@@ -117,63 +117,54 @@ signalé dans la page qualité ; il n'interrompt jamais l'écran.
 
 ---
 
-## Les dix pages
+## Deux parties
+
+L'écran et le rapport ont la **même** architecture de l'information. Deux
+niveaux de navigation, pas cinq.
+
+### Partie I · Direction — se lit debout, en trois minutes
 
 | Page | Question à laquelle elle répond |
 |---|---|
-| **Accueil** | Où en sont les appels d'offres aujourd'hui, et lesquels ? |
-| **Vue d'ensemble** | La rétrospective, exercice par exercice. |
+| **Vue d'ensemble** | Où en sommes-nous, et qu'est-ce qui a bougé ce trimestre ? |
+| **Aujourd'hui** | Quels appels d'offres attendent une décision, lesquels viennent d'être gagnés, lesquels sont à relancer ? |
+
+**La vue d'ensemble ouvre sur l'arbre.** La décomposition de l'activité est la
+première chose que l'on voit : questionnaires reçus → due diligence / appels
+d'offres → les cinq états d'un appel d'offres. La branche « due diligence » n'a
+volontairement pas de suite — une due diligence se traite, elle ne se gagne pas.
+Les effectifs vont de 6 à 1 400 : la forme est donc un arbre de nombres reliés et
+non un pavage proportionnel, qui rendrait illisibles les petites branches, celles
+mêmes qui appellent une décision. La proportion reste encodée, par la barre sous
+chaque nombre.
+
+Viennent ensuite **les huit derniers trimestres** — quatre mouvements en petits
+multiples : reçus, appels d'offres reçus, réponses envoyées, encours remporté.
+Le trimestre en cours est atténué : il est incomplet, il ne se compare pas. Puis
+quatre indicateurs, les constats calculés, la tendance longue, et **les mandats
+remportés** ligne à ligne (client, consultant, pays, classe et sous-classe
+d'actifs, forme juridique, fonds de référence, encours).
+
+Le **sélecteur d'exercice** est dans l'en-tête, à droite du titre : un réglage a
+sa place dans la barre de commande, pas au-dessus du contenu qu'il pilote.
+
+**Aujourd'hui** porte le carnet vivant : le ruban des cinq compartiments, les
+trois registres nommés — qui attend, qui est gagné, qui est perdu — la liste à
+relancer avec son motif, et le mix réel des demandes. Chaque ligne est cliquable :
+elle ouvre l'explorateur sur ce client, où un second clic ouvre la fiche.
+
+### Partie II · Analyse — le détail, dimension par dimension
+
+| Page | Question à laquelle elle répond |
+|---|---|
 | **Activité** | La charge augmente-t-elle ? À quelle vitesse la traite-t-on ? |
 | **Pipeline RFP** | Que deviennent les appels d'offres, et où gagne-t-on ? |
 | **Due diligence** | Quelles expertises et quels pays absorbent la charge ? |
 | **Encours & gains** | Combien l'effort commercial rapporte-t-il réellement ? |
 | **ESG** | Quel poids prend la composante ESG, et chez qui ? |
-| **Insights** | Que faut-il retenir, et qu'est-ce qui explique les délais ? |
+| **Diagnostic** | Qu'est-ce qui explique les délais, et que laisse attendre la tendance ? |
 | **Explorateur** | Du chiffre agrégé au dossier individuel. |
 | **Qualité & export** | D'où viennent les données, que valent-elles, comment les diffuser ? |
-
-### La page d'accueil
-
-Elle est faite pour être lue debout, en dix secondes, par quelqu'un qui n'ouvrira
-aucune autre page :
-
-- **quatre chiffres** — appels d'offres vivants, encours en jeu, taux de succès,
-  encours remporté ;
-- **le carnet en une ligne** — un ruban segmenté : en rédaction, en attente de
-  décision, gagnés, perdus, sans suite. Les cinq compartiments sont exclusifs et
-  couvrent la totalité des RFP ; leur somme vaut le nombre d'appels d'offres, et
-  `python core.py` le vérifie ;
-- **trois registres nommés** — *qui* attend une décision (avec l'ancienneté, en
-  rouge au-delà de quatre mois), *qui* a été gagné, *qui* a été perdu, chacun avec
-  son encours ;
-- **la liste à relancer**, avec le motif : délai cible dépassé, ou silence du
-  client ;
-- **le mix réel** — RFP, RFI, DDQ.
-
-Chaque ligne est cliquable : elle ouvre l'explorateur sur ce client, où un
-second clic ouvre la fiche du dossier.
-
-### La vue d'ensemble
-
-C'est la rétrospective que présente la manager en comité, portée à l'écran :
-
-- **une bande d'exercices** — 2026, 2025, 2024… et « tout l'historique ». Chaque
-  tuile porte son volume et une barre proportionnelle ; cliquer change la fenêtre
-  **globale**, il n'y a pas deux notions de période dans le produit ;
-- **la décomposition de l'activité** — questionnaires reçus → due diligence /
-  appels d'offres → les cinq états d'un appel d'offres. La branche « due
-  diligence » n'a volontairement pas de suite : une due diligence se traite, elle
-  ne se gagne pas. Les effectifs vont de 6 à 1 400, donc la forme est un arbre de
-  nombres reliés et non un pavage proportionnel — la proportion reste encodée,
-  par la barre sous chaque nombre ;
-- **l'encours remporté** dans le bandeau d'indicateurs, avec sa variation face à
-  l'exercice précédent ;
-- **les mandats remportés**, un par ligne : client, consultant, pays, classe et
-  sous-classe d'actifs, forme juridique, fonds de référence, encours. Les quinze
-  premiers par encours, le reste agrégé, le total exact.
-
-Ces quatre éléments sont dans le rapport HTML à l'identique — c'est le même objet
-`Analysis` qui les produit.
 
 ### RFI et DDQ : à l'écran, pas dans le rapport
 
@@ -307,10 +298,15 @@ l'établir. Aucun chiffre n'est produit par un modèle de langage.
 
 ## Design
 
-**Quatre thèmes** définis une seule fois dans `core.py` et partagés par l'écran
-et le rapport : *maison* (sombre, par défaut), *Sombre neutre*,
-*Institutionnel*, *Clair* pour l'impression. Le sélecteur est en bas de la barre
-latérale.
+**Un système, deux surfaces.** Espacement (multiples de 4 et 8), échelle
+typographique, rayons, profondeur et courbes de mouvement sont définis une seule
+fois dans `core.py` — `ESPACEMENT`, `TYPO`, `MOTION` — et émis en variables CSS
+par `core.jetons_css()`. `app.py` et `export.py` consomment les mêmes jetons :
+aucune valeur en dur nulle part ailleurs. Changer une échelle la change partout.
+
+**Quatre thèmes** définis au même endroit : *maison* (sombre, par défaut),
+*Sombre neutre*, *Institutionnel*, *Clair* pour l'impression. Le sélecteur est en
+bas de la barre latérale, et `?theme=clair` le transporte dans l'URL.
 
 **Direction artistique du thème maison** : bleu de nuit, surfaces plates, filets
 d'un pixel qui dessinent la grille, angles courts (4 px), micro-libellés en
@@ -359,7 +355,17 @@ méthodologique. Plotly, Lottie, les animations et la police y sont embarqués :
 il s'ouvre d'un double-clic, sans Python, sans serveur, sans réseau.
 
 C'est le document **diffusé** : il parle le vocabulaire du comité — deux
-familles, pas de types fins.
+familles, pas de types fins. Il reprend les deux parties de l'application, et sa
+vue d'ensemble ouvre elle aussi sur l'arbre.
+
+**Il bascule clair / sombre tout seul**, sans être régénéré : les deux palettes y
+sont embarquées. Une figure Plotly fige pourtant ses couleurs — l'encre d'une
+annotation, le fond d'une piste, l'anneau de surface d'une marque ; un simple
+changement de gabarit ne les atteint pas. `core.substitutions()` produit la table
+des seuls jetons de **chrome**, que le rapport applique à tout ce qui est chaîne
+dans la figure. Les marques ne bougent pas : leur palette passe les contrôles
+daltonisme et contraste sur le bleu de nuit **comme** sur l'ivoire — vérifié, pas
+supposé. Raccourci clavier : `t`.
 
 ---
 

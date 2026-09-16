@@ -67,245 +67,327 @@ def bibliotheque_plotly() -> str:
 # =============================================================================
 # Halo d'ambiance : une seule source lumineuse, très basse intensité. Le thème
 # maison s'en passe — un dégradé posé sur le bleu de nuit de la marque le salit.
-_AMBIANCE = ("radial-gradient(900px 520px at 78% -8%,"
-             "color-mix(in srgb,var(--serie1) 13%,transparent),transparent 62%),"
-             "radial-gradient(700px 420px at -6% 104%,"
-             "color-mix(in srgb,var(--serie1) 8%,transparent),transparent 60%)")
+def variables_css() -> str:
+    """Les deux palettes, émises l'une après l'autre.
+
+    Le rapport embarque la palette sombre ET la palette claire : basculer
+    l'apparence ne demande donc pas de le régénérer. Les MARQUES, elles, ne
+    changent pas — la palette de séries passe les contrôles daltonisme et
+    contraste sur les deux surfaces, seul le chrome est repeint.
+    """
+    initial = core.THEME
+    try:
+        core.appliquer_theme("maison")
+        sombre = core.jetons_css(':root, :root[data-theme="sombre"]')
+        core.appliquer_theme("clair")
+        clair = core.jetons_css(':root[data-theme="clair"]')
+    finally:
+        core.appliquer_theme(initial)
+    return sombre + clair
 
 
-def _variables_css() -> str:
-    return (
-        ":root{"
-        f"--plane:{core.PLANE};--surface:{core.SURFACE};--elevation:{core.ELEVATION};"
-        f"--ink:{core.INK};--ink-2:{core.INK_2};--muted:{core.INK_MUTED};"
-        f"--grid:{core.GRID};--axis:{core.AXIS};--border:{core.BORDER};"
-        f"--accent:{core.ACCENT};--sur-accent:{core.SUR_ACCENT};"
-        f"--bon:{core.TEXTE_BON};--mauvais:{core.TEXTE_MAUVAIS};"
-        f"--serie1:{core.SERIES[0]};--or:{core.ACCENT_2};--rayon:{core.RAYON};"
-        f"--ambiance:{'none' if core.THEME == 'maison' else _AMBIANCE};"
-        f"--font:{core.FONT_STACK};"
-        "}"
-    )
+def chromes_json() -> str:
+    """Tout ce qu'il faut pour rhabiller les figures sans les régénérer :
+    le gabarit de chrome de chaque apparence, et la table de substitution des
+    couleurs figées dans les annotations, les formes et les anneaux de marque."""
+    initial = core.THEME
+    sortie: dict[str, dict[str, object]] = {}
+    try:
+        for nom, cle in (("sombre", "maison"), ("clair", "clair")):
+            core.appliquer_theme(cle)
+            sortie[nom] = {"chrome": core.chrome_plotly()}
+        sortie["sombre"]["paires"] = core.substitutions("clair", "maison")
+        sortie["clair"]["paires"] = core.substitutions("maison", "clair")
+    finally:
+        core.appliquer_theme(initial)
+    return json.dumps(sortie, separators=(",", ":"))
 
 
 CSS = r"""
 *,*::before,*::after{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--plane);color:var(--ink);font-family:var(--font);
-     font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
-     font-feature-settings:"cv05","ss01";overflow:hidden}
+body{margin:0;background:var(--plane);color:var(--ink);font-family:var(--police);
+  font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;font-feature-settings:"cv05","ss01";overflow:hidden;
+  transition:background var(--lent) var(--etat),color var(--lent) var(--etat)}
+::selection{background:color-mix(in srgb,var(--accent) 30%,transparent);color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:var(--rayon-s)}
+*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 18%,transparent) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 14%,transparent);
+  border-radius:99px;border:3px solid transparent;background-clip:content-box}
 
-.ambiance{position:fixed;inset:0;pointer-events:none;z-index:0;background:var(--ambiance)}
+.ambiance{position:fixed;inset:0;pointer-events:none;z-index:0;background:var(--ambiance);
+  transition:background var(--lent) var(--etat)}
 
 /* ---------------------------------------------------------------- rail --- */
-.rail{position:fixed;left:0;top:0;bottom:0;width:224px;z-index:3;
-  display:flex;flex-direction:column;gap:22px;padding:26px 20px 22px;
-  border-right:1px solid var(--border);background:color-mix(in srgb,var(--surface) 72%,transparent);
-  backdrop-filter:blur(14px)}
-.rail__tete{display:flex;align-items:center;gap:11px}
+.rail{position:fixed;left:0;top:0;bottom:0;width:246px;z-index:3;display:flex;
+  flex-direction:column;gap:var(--e5);padding:var(--e6) var(--e5) var(--e5);
+  border-right:1px solid var(--border);background:var(--verre);
+  backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%)}
+.rail__tete{display:flex;align-items:center;gap:var(--e3)}
 .rail__marque{width:38px;height:38px;flex:none;color:var(--accent)}
-.rail__marque svg,.couverture__marque svg{width:100%;height:100%;display:block}
-/* Les cinq flèches se tracent au chargement : une seule animation, sur un
-   tracé, pas un effet posé sur du contenu. */
-.couverture__marque{width:96px;height:96px;color:var(--accent);margin-bottom:26px}
+.rail__marque svg{width:100%;height:100%;display:block}
+.rail__titre{font-size:var(--t-m);font-weight:640;letter-spacing:-.012em;line-height:1.25}
+.rail__titre span{display:block;font-size:9px;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin-top:4px}
+.rail nav{display:flex;flex-direction:column;gap:1px;overflow-y:auto;flex:1;
+  margin:0 calc(var(--e3) * -1);padding:0 var(--e3)}
+.rail__partie{font-size:9px;letter-spacing:.17em;text-transform:uppercase;color:var(--muted);
+  font-weight:700;padding:var(--e4) var(--e3) 6px;line-height:1}
+.rail__partie:first-child{padding-top:0}
+.lien{display:flex;align-items:baseline;gap:var(--e3);padding:9px var(--e3);
+  border-radius:var(--rayon-s);color:var(--muted);text-decoration:none;font-size:var(--t-m);
+  cursor:pointer;border:0;background:none;text-align:left;width:100%;font-family:inherit;
+  transition:color var(--rapide) var(--etat),background var(--rapide) var(--etat),
+             padding-left var(--rapide) var(--sortie)}
+.lien .num{font-size:var(--t-xs);font-weight:700;letter-spacing:.08em;opacity:.7;
+  font-variant-numeric:tabular-nums}
+.lien:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 7%,transparent);
+  padding-left:var(--e4)}
+.lien[aria-current="page"]{color:var(--ink);
+  background:color-mix(in srgb,var(--accent) 16%,transparent);
+  box-shadow:inset 2px 0 0 var(--accent)}
+.lien[aria-current="page"] .num{color:var(--accent);opacity:1}
+.barre{display:flex;align-items:center;gap:var(--e2);justify-content:space-between;
+  border:1px solid var(--border);border-radius:99px;padding:4px 6px;background:var(--surface)}
+.barre button{width:32px;height:32px;border-radius:50%;border:0;background:transparent;
+  color:var(--ink-2);font-size:19px;line-height:1;cursor:pointer;
+  transition:background var(--rapide) var(--etat),color var(--rapide) var(--etat)}
+.barre button:hover:not(:disabled){background:color-mix(in srgb,var(--ink) 9%,transparent);
+  color:var(--ink)}
+.barre button:disabled{opacity:.3;cursor:default}
+.compteur{font-size:var(--t-s);color:var(--muted);font-variant-numeric:tabular-nums;
+  letter-spacing:.06em}
+.rail__pied{font-size:var(--t-xs);color:var(--muted);line-height:1.75}
+.rail__pied b{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* Bascule d'apparence : un vrai contrôle, pas une icône décorative. */
+.apparence{display:flex;gap:2px;padding:3px;border:1px solid var(--border);border-radius:99px;
+  background:var(--surface)}
+.apparence button{flex:1;border:0;background:transparent;color:var(--muted);cursor:pointer;
+  font-family:inherit;font-size:var(--t-xs);font-weight:640;letter-spacing:.06em;
+  text-transform:uppercase;padding:6px 8px;border-radius:99px;
+  transition:background var(--rapide) var(--etat),color var(--rapide) var(--etat)}
+.apparence button[aria-pressed="true"]{background:var(--accent);color:var(--sur-accent)}
+
+/* Jauge de progression : où on en est dans le document. */
+.progres{position:fixed;top:0;left:246px;right:0;height:2px;z-index:5;
+  background:color-mix(in srgb,var(--ink) 8%,transparent)}
+.progres i{display:block;height:100%;width:0;background:var(--accent);
+  transition:width var(--moyen) var(--sortie)}
+
+/* ---------------------------------------------------------------- pages -- */
+main{margin-left:246px;height:100vh;overflow-y:auto;position:relative;z-index:1;
+  scroll-behavior:smooth}
+.page{display:none;padding:var(--e7) var(--e7) var(--e9);max-width:1520px;margin:0 auto}
+.page.actif{display:block;animation:entrer var(--lent) var(--sortie) both}
+@keyframes entrer{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.tete{display:flex;align-items:baseline;gap:var(--e4);margin-bottom:var(--e6);
+  padding-bottom:var(--e4);border-bottom:1px solid var(--border)}
+.tete .num{font-size:var(--t-3xl);font-weight:600;color:var(--accent);letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;opacity:.9}
+.tete h2{font-size:var(--t-2xl);font-weight:600;letter-spacing:-.028em;margin:0;flex:1}
+.tete .compte{font-size:var(--t-s);color:var(--muted)}
+.partie-sur{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);
+  font-weight:700;display:block;margin-bottom:6px}
+
+/* ---------------------------------------------------------- couverture --- */
+.page.couverture.actif{display:flex;flex-direction:column;justify-content:center}
+.couverture{min-height:calc(100vh - 96px);padding:var(--e8) var(--e7) var(--e6);
+  position:relative}
+.couverture__marque{width:92px;height:92px;color:var(--accent);margin-bottom:var(--e5)}
+.couverture__marque svg{width:100%;height:100%;display:block}
 .couverture__marque path{stroke-dasharray:120;stroke-dashoffset:120;
-  animation:tracer .9s cubic-bezier(.22,.61,.36,1) forwards}
+  animation:tracer .9s var(--sortie) forwards}
 .couverture__marque path:nth-child(3n+2){animation-delay:.10s}
 .couverture__marque path:nth-child(3n+3){animation-delay:.16s}
 .couverture__marque path:nth-child(n+7){animation-delay:.22s}
 .couverture__marque path:nth-child(n+13){animation-delay:.34s}
 .couverture__marque path:last-child{animation-delay:.52s}
 @keyframes tracer{to{stroke-dashoffset:0}}
-.rail__titre{font-size:12.5px;font-weight:620;letter-spacing:-.01em;line-height:1.25}
-.rail__titre span{display:block;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--muted);font-weight:600;margin-top:3px}
-.rail nav{display:flex;flex-direction:column;gap:1px;margin-top:6px}
-.lien{display:flex;align-items:baseline;gap:10px;padding:8px 10px;border-radius:8px;
-  color:var(--muted);text-decoration:none;font-size:12.5px;cursor:pointer;
-  border:0;background:none;text-align:left;width:100%;font-family:inherit;
-  transition:color .18s ease,background .18s ease}
-.lien .num{font-size:10px;font-weight:700;letter-spacing:.08em;opacity:.75;
-  font-variant-numeric:tabular-nums}
-.lien:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 6%,transparent)}
-.lien[aria-current="page"]{color:var(--ink);background:color-mix(in srgb,var(--accent) 16%,transparent)}
-.lien[aria-current="page"] .num{color:var(--accent);opacity:1}
-.rail__pied{margin-top:auto;font-size:10.5px;color:var(--muted);line-height:1.6;
-  border-top:1px solid var(--border);padding-top:14px}
-
-/* --------------------------------------------------------------- pages --- */
-main{position:relative;z-index:1;margin-left:224px;height:100vh;overflow-y:auto;
-  overflow-x:hidden;scroll-behavior:smooth}
-.page{display:none;padding:46px 54px 72px;max-width:1420px;margin:0 auto}
-.page.actif{display:block}
-.page.actif>*{animation:monte .42s cubic-bezier(.22,.61,.36,1) both}
-.page.actif>*:nth-child(2){animation-delay:.05s}
-.page.actif>*:nth-child(3){animation-delay:.09s}
-@keyframes monte{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-
-/* ---------------------------------------------------------- couverture --- */
-.page.couverture.actif{display:flex;flex-direction:column;justify-content:center}
-.couverture{min-height:calc(100vh - 92px);padding:56px 54px 40px;position:relative}
-.sur{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);
-  font-weight:650}
-.couverture h1{font-size:clamp(44px,5.4vw,78px);font-weight:600;letter-spacing:-.035em;
-  line-height:1.02;margin:16px 0 0;max-width:15ch}
+.sur{font-size:var(--t-s);letter-spacing:.2em;text-transform:uppercase;color:var(--muted);
+  font-weight:700;margin-bottom:var(--e4)}
+.couverture h1{font-size:clamp(42px,5.2vw,74px);font-weight:600;letter-spacing:-.038em;
+  line-height:1.02;margin:0}
 .couverture h1 em{font-style:normal;color:var(--accent)}
-.couverture .accroche{margin-top:22px;font-size:16.5px;color:var(--ink-2);max-width:62ch;
-  line-height:1.6;font-variant-numeric:tabular-nums}
-.couverture .portee{margin-top:10px;font-size:12.5px;color:var(--muted);max-width:70ch;
-  padding-left:12px;border-left:2px solid var(--border)}
-.heros{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin-top:46px;
-  background:var(--border);border:1px solid var(--border);border-radius:var(--rayon);overflow:hidden}
-.heros .h{background:var(--surface);padding:20px 22px 18px}
-.heros .h__label{font-size:10px;letter-spacing:.11em;text-transform:uppercase;
-  color:var(--muted);font-weight:650}
-.heros .h__valeur{font-size:38px;font-weight:600;letter-spacing:-.018em;margin-top:9px;
+.couverture .accroche{margin-top:var(--e5);font-size:var(--t-xl);color:var(--ink-2);
+  max-width:60ch;font-weight:400}
+.couverture .portee{margin-top:var(--e3);font-size:var(--t-m);color:var(--muted);max-width:70ch}
+.heros{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin-top:var(--e7);
+  background:var(--border);border:1px solid var(--border);border-radius:var(--rayon);
+  overflow:hidden;box-shadow:var(--ombre-2)}
+.h{background:var(--surface);padding:var(--e5)}
+.h__label{font-size:var(--t-xs);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-weight:700}
+.h__valeur{font-size:var(--t-3xl);font-weight:600;letter-spacing:-.032em;margin-top:var(--e3);
   line-height:1;font-variant-numeric:tabular-nums}
-.heros .h__detail{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45}
-.flux{position:absolute;left:0;right:0;bottom:-10px;height:230px;opacity:.5;
+.h__detail{font-size:var(--t-s);color:var(--muted);margin-top:var(--e3)}
+.flux{position:absolute;left:0;right:0;bottom:-10px;height:230px;opacity:.45;
   pointer-events:none;z-index:-1}
-.entrer{margin-top:40px;display:inline-flex;align-items:center;gap:10px;align-self:flex-start;
-  background:var(--accent);color:var(--sur-accent);border:0;border-radius:999px;padding:12px 22px;
-  font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;
-  transition:transform .18s ease,box-shadow .18s ease}
-.entrer:hover{transform:translateY(-1px);box-shadow:0 8px 26px color-mix(in srgb,var(--accent) 34%,transparent)}
+.entrer{margin-top:var(--e6);align-self:flex-start;background:var(--accent);
+  color:var(--sur-accent);border:0;border-radius:99px;padding:13px 24px;font-family:inherit;
+  font-size:var(--t-l);font-weight:620;cursor:pointer;box-shadow:var(--ombre-2);
+  transition:transform var(--moyen) var(--sortie),box-shadow var(--moyen) var(--etat)}
+.entrer:hover{transform:translateY(-2px);box-shadow:var(--ombre-3)}
+.entrer:active{transform:translateY(0)}
 
-/* ------------------------------------------------------------- section --- */
-.tete{display:flex;align-items:flex-end;gap:18px;padding-bottom:16px;margin-bottom:24px;
-  border-bottom:1px solid var(--border)}
-.tete .num{font-size:52px;font-weight:600;letter-spacing:-.04em;line-height:.85;
-  color:color-mix(in srgb,var(--accent) 62%,var(--muted));font-variant-numeric:tabular-nums}
-.tete h2{font-size:26px;font-weight:600;letter-spacing:-.025em;margin:0}
-.tete .compte{margin-left:auto;font-size:11.5px;color:var(--muted);white-space:nowrap}
-
-.grille{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px}
-.carte{grid-column:span 6;background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--rayon);padding:20px 22px 16px;opacity:0;transform:translateY(16px);
-  transition:opacity .5s ease,transform .5s cubic-bezier(.22,.61,.36,1),border-color .2s ease}
+/* ---------------------------------------------------------------- cartes - */
+.grille{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--e4)}
+/* Une piste de grille prend par défaut la largeur de son contenu : un
+   graphique Plotly de 700 px élargirait donc la carte au-delà de l'écran. */
+.grille>*{min-width:0}
+.carte{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
+  padding:var(--e5);opacity:0;transform:translateY(16px);box-shadow:var(--ombre-1);
+  min-width:0;overflow:hidden;
+  transition:opacity var(--lent) var(--sortie),transform var(--lent) var(--sortie),
+             box-shadow var(--moyen) var(--etat)}
+.carte:hover{box-shadow:var(--ombre-2)}
 .carte.vue{opacity:1;transform:none}
-.carte:hover{border-color:color-mix(in srgb,var(--ink) 18%,transparent)}
-.carte--large{grid-column:span 12}
-.carte__titre{font-size:15.5px;font-weight:620;letter-spacing:-.015em}
-.carte__accroche{font-size:12.5px;color:var(--ink-2);margin:6px 0 14px;line-height:1.55}
-.carte__note{font-size:11px;color:var(--muted);margin-top:12px;padding-top:10px;
-  border-top:1px solid var(--border);line-height:1.5}
+.carte--large{grid-column:1 / -1}
+.carte--phare{grid-column:1 / -1;box-shadow:var(--ombre-2)}
+.carte__titre{font-size:var(--t-xl);font-weight:620;letter-spacing:-.018em}
+.carte__accroche{font-size:var(--t-l);color:var(--ink-2);margin:var(--e2) 0 var(--e3);
+  line-height:1.55;max-width:90ch}
+.carte__note{font-size:var(--t-s);color:var(--muted);line-height:1.6;margin-top:var(--e4);
+  padding-top:var(--e3);border-top:1px solid var(--border)}
+.js-plotly-plot{margin-top:var(--e2)}
 
-/* ------------------------------------------------------------ tableaux --- */
-details{margin-top:10px}
-summary{font-size:11.5px;color:var(--muted);cursor:pointer;list-style:none;padding:4px 0;
-  display:inline-flex;align-items:center;gap:7px;transition:color .18s ease}
+/* Voile de démarrage. Le document pèse 5 Mo : l'attente existe vraiment, elle
+   mérite donc un état, pas un écran blanc. Il disparaît quand tout est peint. */
+.demarrage{position:fixed;inset:0;z-index:9;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:var(--e5);background:var(--plane);
+  transition:opacity var(--lent) var(--etat),visibility var(--lent) var(--etat)}
+.demarrage[hidden]{opacity:0;visibility:hidden;display:flex!important}
+.demarrage__marque{width:76px;height:76px;color:var(--accent)}
+.demarrage__marque svg{width:100%;height:100%;display:block}
+.demarrage__marque path{stroke-dasharray:120;stroke-dashoffset:120;
+  animation:tracer 1s var(--sortie) infinite alternate}
+.demarrage__texte{font-size:var(--t-s);letter-spacing:.2em;text-transform:uppercase;
+  color:var(--muted);font-weight:700}
+.demarrage__jauge{width:180px;height:2px;border-radius:99px;overflow:hidden;
+  background:color-mix(in srgb,var(--ink) 10%,transparent)}
+.demarrage__jauge i{display:block;height:100%;width:40%;background:var(--accent);
+  border-radius:99px;animation:glisser 1.1s var(--etat) infinite}
+@keyframes glisser{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+
+/* Squelette : la carte a déjà sa forme avant que Plotly n'ait peint. */
+.squelette{height:300px;border-radius:var(--rayon-s);margin-top:var(--e3);
+  background:linear-gradient(90deg,color-mix(in srgb,var(--ink) 4%,transparent) 0%,
+    color-mix(in srgb,var(--ink) 9%,transparent) 50%,
+    color-mix(in srgb,var(--ink) 4%,transparent) 100%);
+  background-size:520px 100%;animation:luire 1.3s linear infinite}
+@keyframes luire{0%{background-position:-520px 0}100%{background-position:520px 0}}
+
+details{margin-top:var(--e3)}
+summary{cursor:pointer;font-size:var(--t-s);color:var(--muted);list-style:none;
+  display:flex;align-items:center;gap:7px;transition:color var(--rapide) var(--etat)}
 summary::-webkit-details-marker{display:none}
-summary::before{content:"";width:5px;height:5px;border-right:1.5px solid currentColor;
-  border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .2s ease}
-details[open] summary::before{transform:rotate(45deg)}
+summary::before{content:"›";display:inline-block;transition:transform var(--rapide) var(--sortie)}
+details[open] summary::before{transform:rotate(90deg)}
 summary:hover{color:var(--ink-2)}
-.tableau{overflow-x:auto;margin-top:10px;border:1px solid var(--border);border-radius:var(--rayon)}
-/* Un tableau qui EST le bloc doit tenir dans la carte : les libellés passent à
-   la ligne plutôt que de pousser la dernière colonne — l'encours — hors champ. */
-.tableau--bloc{margin-top:14px;max-height:none}
-.tableau--bloc table{table-layout:fixed;font-size:11px}
-.tableau--bloc th,.tableau--bloc td{white-space:normal;padding:7px 9px;
+
+.tableau{overflow-x:auto;margin-top:var(--e3);border:1px solid var(--border);
+  border-radius:var(--rayon-s)}
+.tableau--bloc{margin-top:var(--e4);max-height:none}
+.tableau--bloc table{table-layout:fixed;font-size:var(--t-s)}
+.tableau--bloc th,.tableau--bloc td{white-space:normal;padding:8px 10px;
   overflow-wrap:anywhere;hyphens:auto}
 .tableau--bloc td:last-child,.tableau--bloc th:last-child{white-space:nowrap;width:9%}
 .tableau--bloc td:first-child,.tableau--bloc th:first-child{width:16%}
 .tableau--bloc tbody tr:nth-last-child(-n+2) td{font-weight:640;color:var(--ink)}
 .tableau--bloc tbody tr:last-child td{border-top:1px solid var(--border)}
-table{border-collapse:collapse;width:100%;font-size:11.5px;font-variant-numeric:tabular-nums}
-th,td{text-align:right;padding:7px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
-th{color:var(--muted);font-weight:650;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
-  position:sticky;top:0;background:var(--elevation)}
+table{border-collapse:collapse;width:100%;font-size:var(--t-s);
+  font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:8px var(--e3);border-bottom:1px solid var(--border);
+  white-space:nowrap}
+th{color:var(--muted);font-weight:700;font-size:9.5px;letter-spacing:.08em;
+  text-transform:uppercase;position:sticky;top:0;background:var(--elevation)}
 tbody tr:last-child td{border-bottom:0}
 th:first-child,td:first-child{text-align:left}
-tbody tr:hover td{background:color-mix(in srgb,var(--serie1) 7%,transparent)}
+tbody tr{transition:background var(--rapide) var(--etat)}
+tbody tr:hover td{background:color-mix(in srgb,var(--accent) 8%,transparent)}
 
-/* ----------------------------------------------------------- indicateurs -- */
-.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px}
+/* ----------------------------------------------------------- indicateurs - */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--e4);
+  margin-bottom:var(--e6)}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
-  padding:16px 18px 14px}
-.kpi__label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
-  font-weight:650}
-.kpi__valeur{font-size:27px;font-weight:600;letter-spacing:-.016em;margin-top:8px;
+  padding:var(--e5) var(--e5) var(--e4);box-shadow:var(--ombre-1);
+  transition:box-shadow var(--moyen) var(--etat),transform var(--moyen) var(--sortie)}
+.kpi:hover{box-shadow:var(--ombre-2);transform:translateY(-2px)}
+.kpi__label{font-size:var(--t-xs);letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);font-weight:700}
+.kpi__valeur{font-size:var(--t-2xl);font-weight:600;letter-spacing:-.024em;margin-top:var(--e2);
   line-height:1.05;font-variant-numeric:tabular-nums}
-.kpi__bas{display:flex;align-items:center;gap:9px;margin-top:9px;flex-wrap:wrap}
-.kpi__detail{font-size:11px;color:var(--muted);line-height:1.4}
-.puce{display:inline-flex;gap:5px;font-size:11px;font-weight:650;padding:2px 8px;
-  border-radius:999px;white-space:nowrap}
-.puce--bon{background:color-mix(in srgb,var(--bon) 16%,transparent);color:var(--bon)}
-.puce--mauvais{background:color-mix(in srgb,var(--mauvais) 16%,transparent);color:var(--mauvais)}
+.kpi__bas{display:flex;align-items:center;gap:var(--e2);margin-top:var(--e3);flex-wrap:wrap}
+.kpi__detail{font-size:var(--t-s);color:var(--muted);line-height:1.45}
+.puce{display:inline-flex;gap:5px;font-size:var(--t-s);font-weight:700;padding:3px 9px;
+  border-radius:99px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.puce--bon{background:color-mix(in srgb,var(--bon) 15%,transparent);color:var(--bon)}
+.puce--mauvais{background:color-mix(in srgb,var(--mauvais) 15%,transparent);color:var(--mauvais)}
 .puce--neutre{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink-2)}
-.avertissement{font-size:11.5px;color:var(--muted);border-left:2px solid var(--border);
-  padding-left:12px;margin:0 0 26px;line-height:1.55;max-width:104ch}
+.avertissement{font-size:var(--t-s);color:var(--muted);border-left:2px solid var(--border);
+  padding-left:var(--e3);margin:0 0 var(--e6);line-height:1.6;max-width:110ch}
 
 /* ------------------------------------------------------------- synthèse -- */
 .synthese{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
-  padding:22px 26px;margin-bottom:22px}
-.synthese h3{margin:0 0 14px;font-size:15px;font-weight:620;letter-spacing:-.015em}
-.synthese ul{margin:0;padding:0;list-style:none;display:grid;gap:11px}
-.synthese li{font-size:12.5px;color:var(--ink-2);line-height:1.55;padding-left:16px;
-  position:relative}
-.synthese li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;
+  padding:var(--e5) var(--e6);margin-bottom:var(--e6);box-shadow:var(--ombre-1)}
+.synthese h3{font-size:var(--t-xl);font-weight:620;margin:0 0 var(--e4);letter-spacing:-.016em}
+.synthese ul{margin:0;padding:0;list-style:none;display:grid;gap:var(--e3)}
+.synthese li{position:relative;padding-left:var(--e4);font-size:var(--t-l);line-height:1.5}
+.synthese li::before{content:"";position:absolute;left:0;top:.62em;width:6px;height:6px;
   border-radius:50%;background:var(--accent)}
-.synthese li b{color:var(--ink);font-weight:560}
-.synthese li .appui{color:var(--muted);font-size:11.5px;display:inline-block;margin-top:3px}
+.synthese .appui{font-size:var(--t-s);color:var(--muted)}
 
-/* ------------------------------------------------------------- annexe ---- */
+/* --------------------------------------------------------------- annexe -- */
 .annexe{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
-  padding:24px 28px;font-size:12.5px;color:var(--ink-2)}
-.annexe h3{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
-  margin:26px 0 10px;font-weight:650}
-.annexe h3:first-of-type{margin-top:0}
-.annexe dt{font-weight:620;color:var(--ink);margin-top:11px}
-.annexe dd{margin:3px 0 0}
-.annexe code{background:color-mix(in srgb,var(--ink) 8%,transparent);padding:1px 5px;
-  border-radius:4px;font-size:11.5px}
-.annexe ul{margin:8px 0 0;padding-left:18px}
-.alerte{color:var(--mauvais)}
-.fin{display:flex;align-items:center;gap:14px;margin-top:22px;padding-top:18px;
-  border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
-.fin__coche{width:42px;height:42px;flex:none}
+  padding:var(--e6);box-shadow:var(--ombre-1)}
+.annexe h3{font-size:var(--t-l);font-weight:660;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--muted);margin:var(--e6) 0 var(--e3)}
+.annexe h3:first-child{margin-top:0}
+.annexe dl{margin:0;display:grid;gap:var(--e3)}
+.annexe dt{font-weight:620;font-size:var(--t-l)}
+.annexe dd{margin:4px 0 0;color:var(--ink-2);font-size:var(--t-m);line-height:1.6}
+.annexe code{background:color-mix(in srgb,var(--ink) 8%,transparent);padding:2px 6px;
+  border-radius:var(--rayon-s);font-size:var(--t-s)}
+.annexe ul{margin:var(--e2) 0 0;padding-left:var(--e4);color:var(--ink-2);font-size:var(--t-m)}
+.fin{display:flex;align-items:center;gap:var(--e4);margin-top:var(--e6);
+  padding-top:var(--e5);border-top:1px solid var(--border);color:var(--muted);
+  font-size:var(--t-m)}
+.fin__coche{width:46px;height:46px;flex:none}
+h3.alerte{color:var(--mauvais)}
 
-/* ---------------------------------------------------------- navigation --- */
-.barre{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:14px;
-  border:1px solid var(--border);border-radius:999px;padding:4px 6px}
-.barre button{width:32px;height:32px;border-radius:50%;border:0;background:transparent;
-  color:var(--ink-2);cursor:pointer;font-size:15px;line-height:1;transition:background .18s ease,color .18s ease}
-.barre button:hover:not(:disabled){background:color-mix(in srgb,var(--ink) 10%,transparent);color:var(--ink)}
-.barre button:disabled{opacity:.3;cursor:default}
-.barre .compteur{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;
-  padding:0 8px;letter-spacing:.04em}
-
-/* --------------------------------------------------------- adaptations --- */
-@media (max-width:1180px){
-  .heros{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .carte{grid-column:span 12}
+/* ----------------------------------------------------------- responsive -- */
+@media (max-width:1100px){
+  .grille{grid-template-columns:1fr}
+  .kpis,.heros{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:820px){
-  .rail{position:static;width:auto;flex-direction:row;align-items:center;gap:14px;
-    border-right:0;border-bottom:1px solid var(--border);overflow-x:auto}
-  .rail nav{flex-direction:row;margin-top:0}
+  .rail{position:static;width:auto;flex-direction:row;flex-wrap:wrap;align-items:center;
+    height:auto;border-right:0;border-bottom:1px solid var(--border);gap:var(--e3);
+    padding:var(--e3) var(--e4)}
+  .rail nav{flex-direction:row;overflow-x:auto;flex:1 1 100%;gap:var(--e1)}
+  .rail__partie{padding:var(--e2) var(--e2) var(--e2) 0}
   .rail__pied{display:none}
-  main{margin-left:0;height:auto}
-  .page{padding:26px 18px 110px}
-  .couverture{padding:34px 18px}
+  .progres{left:0}
+  main{margin-left:0;height:auto;overflow:visible}
+  .page{padding:var(--e5) var(--e4) var(--e7)}
+  .couverture{padding:var(--e6) var(--e4)}
+  .kpis,.heros{grid-template-columns:1fr}
 }
 
-/* Mouvement : coupé net si le système le demande. */
 @media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation:none!important;transition:none!important;
-    scroll-behavior:auto!important}
+  *,*::before,*::after{transition:none!important;animation:none!important}
   .carte{opacity:1;transform:none}
+  main{scroll-behavior:auto}
 }
 
-/* Impression : toutes les pages à la suite, sur fond blanc.
-   Pour un vrai rendu papier, préférer « python export.py --clair ». */
 @media print{
-  body{background:#fff;color:#111;overflow:visible}
-  .ambiance,.rail,.barre,.entrer,.flux{display:none!important}
-  main{margin:0;height:auto;overflow:visible}
-  .page{display:block!important;page-break-after:always;padding:0 0 24px;max-width:none}
-  .carte,.synthese,.annexe,.kpi{break-inside:avoid;opacity:1;transform:none;
-    background:#fff;border-color:#ddd}
+  .ambiance,.rail,.barre,.entrer,.flux,.progres{display:none!important}
+  main{margin-left:0;height:auto;overflow:visible}
+  .page{display:block!important;page-break-after:always;max-width:none}
+  .carte{opacity:1;transform:none;break-inside:avoid;box-shadow:none}
   .couverture{min-height:auto}
 }
 """
@@ -358,8 +440,11 @@ def _tableau_html(tableau: pd.DataFrame) -> str:
                            classes="donnees", justify="right")
 
 
-def _carte_html(bloc: core.Block, indice: int) -> str:
-    classe = "carte carte--large" if bloc.large else "carte"
+def _carte_html(bloc: core.Block, indice: int, phare: bool = False) -> str:
+    """Une analyse dans sa carte. « Phare » = pleine largeur et relief accru :
+    réservé aux blocs qui ouvrent une partie."""
+    classe = "carte carte--phare" if phare else ("carte carte--large" if bloc.large
+                                                 else "carte")
     note = f'<div class="carte__note">{_e(bloc.note)}</div>' if bloc.note else ""
     tableau = _tableau_html(bloc.tableau)
     if bloc.figure is None:
@@ -472,14 +557,92 @@ def _annexe_html(analyse: core.Analysis) -> str:
 # =============================================================================
 SCRIPT = r"""
 (function () {
+  const racine = document.documentElement;
   const pages = [...document.querySelectorAll('.page')];
   const liens = [...document.querySelectorAll('.lien')];
   const compteur = document.getElementById('compteur');
   const precedent = document.getElementById('precedent');
   const suivant = document.getElementById('suivant');
+  const progres = document.querySelector('.progres i');
   const sobre = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let courante = 0;
 
+  /* ---- Apparence : les deux palettes sont déjà dans le document ----------
+     Seul le CHROME des graphiques est repeint ; les marques ne bougent pas,
+     leur palette passe les contrôles sur les deux surfaces. */
+  function tousLesGraphiques() {
+    return [...document.querySelectorAll('.js-plotly-plot')];
+  }
+  function substituer(texte, paires) {
+    for (let i = 0; i < paires.length; i++) {
+      if (texte.indexOf(paires[i][0]) !== -1) {
+        texte = texte.split(paires[i][0]).join(paires[i][1]);
+      }
+    }
+    return texte;
+  }
+
+  /* Parcourt un objet de figure et renvoie les chemins pointés dont la valeur
+     de couleur a changé. Une figure fige ses couleurs : l'encre d'une
+     annotation, le fond d'une piste, l'anneau de surface d'une marque. Un
+     relayout du gabarit ne les atteint pas — ce parcours, si. */
+  function chemins(obj, prefixe, paires, sortie) {
+    for (const cle in obj) {
+      if (!Object.prototype.hasOwnProperty.call(obj, cle)) continue;
+      if (cle.charAt(0) === '_') continue;
+      const v = obj[cle];
+      const p = prefixe ? prefixe + '.' + cle : cle;
+      if (typeof v === 'string') {
+        const n = substituer(v, paires);
+        if (n !== v) sortie[p] = n;
+      } else if (Array.isArray(v)) {
+        if (v.length && v.every(e => typeof e === 'string')) {
+          const tab = v.map(e => substituer(e, paires));
+          if (tab.some((e, i) => e !== v[i])) sortie[p] = tab;
+        } else {
+          v.forEach(function (e, i) {
+            if (e && typeof e === 'object') chemins(e, p + '[' + i + ']', paires, sortie);
+          });
+        }
+      } else if (v && typeof v === 'object') {
+        chemins(v, p, paires, sortie);
+      }
+    }
+  }
+
+  function appliquerApparence(nom) {
+    racine.setAttribute('data-theme', nom);
+    document.querySelectorAll('.apparence button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.theme === nom));
+    });
+    try { localStorage.setItem('apparence', nom); } catch (e) {}
+    const reglage = window.CHROMES && window.CHROMES[nom];
+    if (!window.Plotly || !reglage) return;
+    tousLesGraphiques().forEach(function (d) {
+      try {
+        const patch = Object.assign({}, reglage.chrome);
+        if (d.layout) chemins(d.layout, '', reglage.paires, patch);
+        window.Plotly.relayout(d, patch);
+        (d.data || []).forEach(function (trace, i) {
+          const t = {};
+          chemins(trace, '', reglage.paires, t);
+          const cles = Object.keys(t);
+          if (!cles.length) return;
+          const maj = {};
+          cles.forEach(function (c) { maj[c] = [t[c]]; });
+          window.Plotly.restyle(d, maj, [i]);
+        });
+      } catch (e) {}
+    });
+  }
+  document.querySelectorAll('.apparence button').forEach(function (b) {
+    b.addEventListener('click', function () { appliquerApparence(b.dataset.theme); });
+  });
+  let depart = 'sombre';
+  try { depart = localStorage.getItem('apparence') || 'sombre'; } catch (e) {}
+  appliquerApparence(depart);
+
+  /* ---- Navigation ------------------------------------------------------- */
   function redimensionner(page) {
     if (!window.Plotly) return;
     page.querySelectorAll('.js-plotly-plot').forEach(function (d) {
@@ -495,9 +658,15 @@ SCRIPT = r"""
     }
     const obs = new IntersectionObserver(function (entrees) {
       entrees.forEach(function (e) {
-        if (e.isIntersecting) { e.target.classList.add('vue'); obs.unobserve(e.target); }
+        if (!e.isIntersecting) return;
+        // Décalage en cascade : les cartes se posent, elles n'apparaissent pas
+        // toutes au même instant.
+        const rang = cartes.indexOf(e.target) % 4;
+        e.target.style.transitionDelay = (rang * 60) + 'ms';
+        e.target.classList.add('vue');
+        obs.unobserve(e.target);
       });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+    }, { rootMargin: '0px 0px -6% 0px', threshold: 0.05 });
     cartes.forEach(c => obs.observe(c));
   }
 
@@ -511,12 +680,13 @@ SCRIPT = r"""
                          + String(pages.length - 1).padStart(2, '0');
     precedent.disabled = courante === 0;
     suivant.disabled = courante === pages.length - 1;
+    if (progres) progres.style.width = (courante / (pages.length - 1) * 100) + '%';
     const page = pages[courante];
     reveler(page);
     // Plotly mesure à zéro dans un conteneur masqué : on redimensionne à
     // l'affichage, sinon les graphiques sortent écrasés.
     requestAnimationFrame(() => redimensionner(page));
-    setTimeout(() => redimensionner(page), 260);
+    setTimeout(() => redimensionner(page), 300);
     if (history.replaceState) history.replaceState(null, '', '#page-' + courante);
   }
 
@@ -532,6 +702,9 @@ SCRIPT = r"""
     else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { afficher(courante - 1); e.preventDefault(); }
     else if (e.key === 'Home') { afficher(0); e.preventDefault(); }
     else if (e.key === 'End') { afficher(pages.length - 1); e.preventDefault(); }
+    else if (e.key === 't' || e.key === 'T') {
+      appliquerApparence(racine.getAttribute('data-theme') === 'clair' ? 'sombre' : 'clair');
+    }
     else if (/^[0-9]$/.test(e.key)) { afficher(parseInt(e.key, 10)); }
   });
   window.addEventListener('resize', () => redimensionner(pages[courante]));
@@ -549,11 +722,9 @@ SCRIPT = r"""
       if (sobre) a.goToAndStop(a.totalFrames - 1, true);
       return a;
     };
-    monter('lottie-marque', 'marque', true);
     monter('lottie-flux', 'flux', false);
     const coche = monter('lottie-valide', 'valide', false);
     if (coche && !sobre) { coche.stop(); }
-    // La coche ne se joue qu'une fois la page méthodologie ouverte.
     const pageFin = document.querySelector('.page:last-of-type');
     if (coche && pageFin) {
       const jouer = new MutationObserver(function () {
@@ -568,15 +739,14 @@ SCRIPT = r"""
     const cible = parseFloat(el.getAttribute('data-compteur'));
     const final = el.textContent;
     if (sobre || !isFinite(cible) || cible === 0) return;
-    const duree = 900, debut = performance.now();
-    const chiffres = final.replace(/[0-9]/g, '0');
-    el.textContent = chiffres;
+    const duree = 1000, debutT = performance.now();
+    el.textContent = final.replace(/[0-9]/g, '0');
     function pas(t) {
-      const p = Math.min(1, (t - debut) / duree);
+      const p = Math.min(1, (t - debutT) / duree);
       const doux = 1 - Math.pow(1 - p, 3);
       if (p < 1) {
         const v = cible * doux;
-        el.textContent = final.replace(/[0-9][0-9 ,.]*/, function (m) {
+        el.textContent = final.replace(/[0-9][0-9 ,.]*/, function (m) {
           const dec = (m.split(',')[1] || '').length;
           return v.toLocaleString('fr-FR', { minimumFractionDigits: dec,
                                              maximumFractionDigits: dec });
@@ -587,8 +757,17 @@ SCRIPT = r"""
     requestAnimationFrame(pas);
   });
 
-  const depart = (location.hash.match(/^#page-(\d+)$/) || [])[1];
-  afficher(depart ? parseInt(depart, 10) : 0);
+  /* ---- Le voile ne se lève qu'une fois la première page réellement peinte -- */
+  const voile = document.getElementById('demarrage');
+  function lever() {
+    if (!voile) return;
+    voile.hidden = true;
+    setTimeout(function () { voile.style.display = 'none'; }, 460);
+  }
+  const versPage = (location.hash.match(/^#page-(\d+)$/) || [])[1];
+  afficher(versPage ? parseInt(versPage, 10) : 0);
+  requestAnimationFrame(function () { requestAnimationFrame(lever); });
+  setTimeout(lever, 2500);
 })();
 """
 
@@ -602,21 +781,24 @@ def construire_rapport(analyse: core.Analysis, titre: str = TITRE_RAPPORT) -> st
     Le rapport est le document DIFFUSÉ : il s'en tient aux deux familles du
     pilotage, RFP et due diligence. Les blocs et indicateurs marqués
     `hors_rapport` — le détail RFI / DDQ — restent à l'écran.
+
+    Il est en deux parties, comme l'application : « Direction » se lit debout,
+    « Analyse » répond aux pourquoi.
     """
     if analyse.vide:
         raise ValueError("Aucune donnée à exporter : la sélection est vide.")
 
-    sections = analyse.sections_rapport
+    parties = analyse.parties_rapport()
+    sections = [s for _, _, _, groupe in parties for s in groupe]
     n_analyses = sum(len(analyse.section(cle, pour_rapport=True)) for cle, _ in sections)
     pages: list[str] = []
     liens: list[str] = []
     indice_figure = 0
+    logo = core.logo_svg()
 
     # ---- Page 0 : couverture --------------------------------------------
     flux = ('<div class="flux" id="lottie-flux"></div>' if core.animation("flux") else "")
-    logo = core.logo_svg()
     marque_couverture = f'<div class="couverture__marque">{logo}</div>' if logo else ""
-
     liens.append('<button class="lien" type="button"><span class="num">00</span>'
                  'Couverture</button>')
     # Le périmètre ne s'affiche que s'il restreint quelque chose : sur
@@ -627,7 +809,7 @@ def construire_rapport(analyse: core.Analysis, titre: str = TITRE_RAPPORT) -> st
         '<section class="page couverture">'
         f'{flux}'
         f'{marque_couverture}'
-        f'<div class="sur">{_e(core.MARQUE_NOM)} · {_e(core.MARQUE_ACTIVITE)}</div>'
+        f'<div class="sur">{_e(core.MARQUE_NOM)} &middot; {_e(core.MARQUE_ACTIVITE)}</div>'
         '<h1>Activité <em>RFP &amp;&nbsp;Due&nbsp;Diligence</em></h1>'
         f'<p class="accroche">{core.fmt_int(len(analyse.df))} demandes analysées'
         f'&#8239;·&#8239;{core.pluriel(n_analyses, "analyse")}'
@@ -637,35 +819,53 @@ def construire_rapport(analyse: core.Analysis, titre: str = TITRE_RAPPORT) -> st
         '<button class="entrer" id="entrer" type="button">Ouvrir le rapport →</button>'
         '</section>')
 
-    # ---- Pages 1..n : une par section ------------------------------------
-    for numero, (cle, libelle) in enumerate(sections, start=1):
-        blocs = analyse.section(cle, pour_rapport=True)
-        cartes = []
-        for bloc in blocs:
-            cartes.append(_carte_html(bloc, indice_figure))
-            indice_figure += 1
-        entete = (f'<div class="tete"><span class="num">{numero:02d}</span>'
-                  f'<h2>{_e(libelle)}</h2>'
-                  f'<span class="compte">{core.pluriel(len(blocs), "analyse")}</span></div>')
-        # Les indicateurs et la synthèse ouvrent la première section.
-        ouverture = ""
-        if numero == 1:
-            comparaison = ""
-            fenetre = analyse.stats.get("comparaison")
-            if fenetre:
-                comparaison = (f" Les variations sont mesurées face à la période précédente de "
-                               f"même durée ({core.fmt_date(fenetre[0])} → "
-                               f"{core.fmt_date(fenetre[1])}).")
-            ouverture = (f'<div class="kpis">{"".join(_kpi_html(k) for k in analyse.kpis_rapport)}</div>'
-                         f'<p class="avertissement">{_e(core.NOTE_CENSURE)}{_e(comparaison)}</p>'
-                         f'{_synthese_html(analyse)}')
-        liens.append(f'<button class="lien" type="button"><span class="num">{numero:02d}</span>'
-                     f'{_e(libelle)}</button>')
-        pages.append(f'<section class="page">{entete}{ouverture}'
-                     f'<div class="grille">{"".join(cartes)}</div></section>')
+    # ---- Pages 1..n : une par section, groupées en deux parties ----------
+    numero = 0
+    for _, nom_partie, accroche_partie, groupe in parties:
+        liens.append(f'<div class="rail__partie">{_e(nom_partie)}</div>')
+        for cle, libelle in groupe:
+            numero += 1
+            blocs = analyse.section(cle, pour_rapport=True)
+            n_blocs = len(blocs)
+            ouverture = ""
+            if cle == "synthese":
+                # L'ARBRE D'ABORD : la décomposition de l'activité ouvre le
+                # rapport, avant les indicateurs. C'est la question du comité.
+                phares = []
+                for phare in ("decomposition", "trimestre"):
+                    bloc = next((b for b in blocs if b.cle == phare), None)
+                    if bloc is None:
+                        continue
+                    phares.append(_carte_html(bloc, indice_figure, phare=True))
+                    indice_figure += 1
+                    blocs = [b for b in blocs if b is not bloc]
+                comparaison = ""
+                fenetre = analyse.stats.get("comparaison")
+                if fenetre:
+                    comparaison = (" Les variations sont mesurées face à la période "
+                                   f"précédente de même durée ({core.fmt_date(fenetre[0])} → "
+                                   f"{core.fmt_date(fenetre[1])}).")
+                ouverture = (
+                    f'<div class="grille">{"".join(phares)}</div>'
+                    f'<div class="kpis" style="margin-top:var(--e6)">'
+                    f'{"".join(_kpi_html(k) for k in analyse.kpis_rapport)}</div>'
+                    f'<p class="avertissement">{_e(core.NOTE_CENSURE)}{_e(comparaison)}</p>'
+                    f'{_synthese_html(analyse)}')
+            cartes = []
+            for bloc in blocs:
+                cartes.append(_carte_html(bloc, indice_figure))
+                indice_figure += 1
+            entete = (f'<div class="tete"><span class="num">{numero:02d}</span>'
+                      f'<h2><span class="partie-sur">{_e(nom_partie)} · '
+                      f'{_e(accroche_partie)}</span>{_e(libelle)}</h2>'
+                      f'<span class="compte">{core.pluriel(n_blocs, "analyse")}</span></div>')
+            liens.append(f'<button class="lien" type="button">'
+                         f'<span class="num">{numero:02d}</span>{_e(libelle)}</button>')
+            pages.append(f'<section class="page">{entete}{ouverture}'
+                         f'<div class="grille">{"".join(cartes)}</div></section>')
 
     # ---- Dernière page : méthodologie ------------------------------------
-    numero = len(sections) + 1
+    numero += 1
     liens.append(f'<button class="lien" type="button"><span class="num">{numero:02d}</span>'
                  f'Méthodologie</button>')
     pages.append(
@@ -673,30 +873,35 @@ def construire_rapport(analyse: core.Analysis, titre: str = TITRE_RAPPORT) -> st
         f'<h2>Méthodologie &amp; qualité des données</h2></div>'
         f'{_annexe_html(analyse)}</section>')
 
-    animations = {nom: core.animation(nom) for nom in ("marque", "flux", "valide")}
+    animations = {nom: core.animation(nom) for nom in ("flux", "valide")}
     animations = {k: v for k, v in animations.items() if v}
     lecteur = core.lecteur_lottie()
     bloc_lottie = (f'<script>{lecteur}</script>'
                    f'<script>window.ANIMATIONS={json.dumps(animations, separators=(",", ":"))};</script>'
                    if lecteur and animations else "")
-    marque = (f'<div class="rail__marque">{logo}</div>' if logo else
-              '<div class="rail__marque" id="lottie-marque"></div>'
-              if animations.get("marque") else "")
+    marque = f'<div class="rail__marque">{logo}</div>' if logo else ""
     genere = analyse.genere_le.strftime("%d/%m/%Y à %H:%M")
+    voile = (f'<div class="demarrage" id="demarrage">'
+             f'<div class="demarrage__marque">{logo}</div>'
+             f'<div class="demarrage__texte">{_e(core.MARQUE_PRODUIT)}</div>'
+             f'<div class="demarrage__jauge"><i></i></div></div>')
 
     return f"""<!doctype html>
-<html lang="fr" data-theme="{core.THEME}">
+<html lang="fr" data-theme="sombre">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_e(titre)} — rapport du {analyse.genere_le:%d/%m/%Y}</title>
-<style>{core.police_css()}{_variables_css()}{CSS}</style>
+<style>{core.police_css()}{variables_css()}{CSS}</style>
 <!-- Plotly doit précéder les graphiques : chaque figure s'initialise par un
      script en ligne posé dans la page. -->
 <script>{bibliotheque_plotly()}</script>
+<script>window.CHROMES={chromes_json()};</script>
 </head>
 <body>
+{voile}
 <div class="ambiance"></div>
+<div class="progres"><i></i></div>
 
 <aside class="rail">
   <div class="rail__tete">
@@ -708,6 +913,10 @@ def construire_rapport(analyse: core.Analysis, titre: str = TITRE_RAPPORT) -> st
     <button id="precedent" type="button" title="Page précédente (←)">‹</button>
     <span class="compteur" id="compteur">00 / 00</span>
     <button id="suivant" type="button" title="Page suivante (→)">›</button>
+  </div>
+  <div class="apparence" role="group" aria-label="Apparence">
+    <button type="button" data-theme="sombre" aria-pressed="true">Sombre</button>
+    <button type="button" data-theme="clair" aria-pressed="false">Clair</button>
   </div>
   <div class="rail__pied">
     <b>{core.fmt_int(len(analyse.df))}</b> demandes<br>

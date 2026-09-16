@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
+from plotly.subplots import make_subplots
 
 _PANDAS_2 = int(pd.__version__.split(".")[0]) >= 2
 
@@ -329,6 +330,21 @@ THEMES: dict[str, dict[str, Any]] = {
         STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
         TEXTE_BON="#4ac45f", TEXTE_MAUVAIS="#ef7676",
         RAYON="4px",
+        # Profondeur : trois ombres portées, empilées, de très faible opacité.
+        # Sur un fond sombre une ombre ne « tombe » pas — c'est le filet clair
+        # du bord supérieur qui donne le relief. D'où le inset en tête.
+        OMBRE_1="inset 0 1px 0 rgba(255,255,255,.045), 0 1px 2px rgba(0,0,0,.34)",
+        OMBRE_2=("inset 0 1px 0 rgba(255,255,255,.05), 0 2px 4px rgba(0,0,0,.30), "
+                 "0 8px 20px rgba(0,0,0,.30)"),
+        OMBRE_3=("inset 0 1px 0 rgba(255,255,255,.06), 0 4px 10px rgba(0,0,0,.34), "
+                 "0 18px 44px rgba(0,0,0,.40)"),
+        VERRE="rgba(16,30,51,.72)",
+        VERRE_BORD="rgba(185,151,91,.14)",
+        # Ambiance : deux nappes très basses, dans les teintes de la maison.
+        # Pas d'aurore multicolore — la lumière suggère la profondeur, elle ne
+        # se donne pas en spectacle.
+        AMBIANCE=("radial-gradient(1100px 620px at 78% -14%, rgba(185,151,91,.075), transparent 62%),"
+                  "radial-gradient(900px 560px at -8% 108%, rgba(57,135,229,.075), transparent 60%)"),
     ),
     "sombre": dict(
         PLANE="#0d1014",          # fond de page
@@ -354,6 +370,15 @@ THEMES: dict[str, dict[str, Any]] = {
         STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
         TEXTE_BON="#4ac45f", TEXTE_MAUVAIS="#ef7676",
         RAYON="10px",
+        OMBRE_1="inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.36)",
+        OMBRE_2=("inset 0 1px 0 rgba(255,255,255,.05), 0 2px 4px rgba(0,0,0,.32), "
+                 "0 8px 20px rgba(0,0,0,.32)"),
+        OMBRE_3=("inset 0 1px 0 rgba(255,255,255,.06), 0 4px 10px rgba(0,0,0,.36), "
+                 "0 18px 44px rgba(0,0,0,.42)"),
+        VERRE="rgba(20,24,30,.74)",
+        VERRE_BORD="rgba(255,255,255,.08)",
+        AMBIANCE=("radial-gradient(1000px 600px at 80% -12%, rgba(57,135,229,.10), transparent 62%),"
+                  "radial-gradient(800px 520px at -6% 106%, rgba(57,135,229,.06), transparent 60%)"),
     ),
     # Thème institutionnel : celui du produit. Fond ivoire froid, encre encre-
     # marine, accent laiton réservé au chrome. Les séries de données gardent la
@@ -381,6 +406,13 @@ THEMES: dict[str, dict[str, Any]] = {
         STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
         TEXTE_BON="#046b12", TEXTE_MAUVAIS="#a82f2f",
         RAYON="10px",
+        OMBRE_1="0 1px 2px rgba(17,24,35,.07), 0 1px 1px rgba(17,24,35,.04)",
+        OMBRE_2="0 2px 5px rgba(17,24,35,.06), 0 10px 24px rgba(17,24,35,.07)",
+        OMBRE_3="0 4px 12px rgba(17,24,35,.08), 0 22px 52px rgba(17,24,35,.10)",
+        VERRE="rgba(255,255,255,.78)",
+        VERRE_BORD="rgba(17,24,35,.09)",
+        AMBIANCE=("radial-gradient(1100px 640px at 82% -16%, rgba(22,49,79,.055), transparent 62%),"
+                  "radial-gradient(880px 540px at -8% 106%, rgba(154,123,40,.045), transparent 60%)"),
     ),
     "clair": dict(
         PLANE="#f7f6f3",
@@ -404,6 +436,12 @@ THEMES: dict[str, dict[str, Any]] = {
         STATUS_SERIOUS="#ec835a", STATUS_CRITICAL="#d03b3b",
         TEXTE_BON="#006300", TEXTE_MAUVAIS="#a82f2f",
         RAYON="10px",
+        OMBRE_1="0 1px 2px rgba(11,11,11,.06), 0 1px 1px rgba(11,11,11,.04)",
+        OMBRE_2="0 2px 5px rgba(11,11,11,.05), 0 10px 24px rgba(11,11,11,.06)",
+        OMBRE_3="0 4px 12px rgba(11,11,11,.07), 0 22px 52px rgba(11,11,11,.09)",
+        VERRE="rgba(252,252,251,.80)",
+        VERRE_BORD="rgba(11,11,11,.08)",
+        AMBIANCE="none",
     ),
 }
 
@@ -426,6 +464,124 @@ ORDINAL: list[str] = []
 STATUT_COLORS: dict[str, str] = {}
 TYPE_COLORS: dict[str, str] = {}
 CLIENT_TYPE_COLORS: dict[str, str] = {}
+
+
+# =============================================================================
+#  SYSTÈME DE DESIGN — une seule définition, deux surfaces
+# -----------------------------------------------------------------------------
+#  Espacement, échelle typographique, rayons, profondeur et mouvement sont
+#  définis ICI et émis en variables CSS. app.py et export.py consomment les
+#  mêmes jetons : l'écran et le rapport ne peuvent pas diverger d'un pixel.
+# =============================================================================
+# Échelle d'espacement, multiples de 4 et 8 — aucune valeur en dur ailleurs.
+ESPACEMENT = {"1": "4px", "2": "8px", "3": "12px", "4": "16px", "5": "24px",
+              "6": "32px", "7": "48px", "8": "64px", "9": "96px"}
+
+# Échelle typographique. Le rapport de 1,25 entre les corps de texte, plus
+# marqué au-delà : une hiérarchie se voit, elle ne se devine pas.
+TYPO = {"xs": "10px", "s": "11px", "m": "12.5px", "l": "14px", "xl": "18px",
+        "2xl": "24px", "3xl": "32px", "4xl": "44px", "5xl": "60px"}
+
+# Mouvement. Une seule courbe pour les entrées (décélération franche, la
+# sensation « ressort » sans rebond parasite), une pour les états.
+MOTION = {
+    "rapide": "150ms", "moyen": "260ms", "lent": "420ms",
+    "sortie": "cubic-bezier(.22,1,.36,1)",
+    "etat": "cubic-bezier(.4,0,.2,1)",
+}
+
+
+def jetons_css(selecteur: str = ":root") -> str:
+    """Tous les jetons du thème actif, en variables CSS.
+
+    Appelable plusieurs fois avec des sélecteurs différents : c'est ainsi que le
+    rapport embarque les deux palettes et bascule clair/sombre sans être
+    régénéré.
+    """
+    jetons = {
+        "plane": PLANE, "surface": SURFACE, "elevation": ELEVATION,
+        "ink": INK, "ink-2": INK_2, "muted": INK_MUTED,
+        "grid": GRID, "axis": AXIS, "border": BORDER, "voile": VOILE,
+        "accent": ACCENT, "or": ACCENT_2, "sur-accent": SUR_ACCENT,
+        "bon": TEXTE_BON, "mauvais": TEXTE_MAUVAIS,
+        "attention": STATUS_WARNING, "neutre": INK_MUTED,
+        "gagne": STATUS_GOOD, "perdu": STATUS_CRITICAL, "sans-suite": STATUS_SERIOUS,
+        "attente": SERIES[0],
+        "rayon": RAYON,
+        "rayon-s": f"max(2px, calc({RAYON} - 3px))",
+        "rayon-l": f"calc({RAYON} + 4px)",
+        "ombre-1": THEMES[THEME]["OMBRE_1"], "ombre-2": THEMES[THEME]["OMBRE_2"],
+        "ombre-3": THEMES[THEME]["OMBRE_3"],
+        "verre": THEMES[THEME]["VERRE"], "verre-bord": THEMES[THEME]["VERRE_BORD"],
+        "ambiance": THEMES[THEME]["AMBIANCE"],
+        "police": FONT_STACK,
+    }
+    for i, couleur in enumerate(SERIES, start=1):
+        jetons[f"serie{i}"] = couleur
+    for cle, valeur in ESPACEMENT.items():
+        jetons[f"e{cle}"] = valeur
+    for cle, valeur in TYPO.items():
+        jetons[f"t-{cle}"] = valeur
+    for cle, valeur in MOTION.items():
+        jetons[cle] = valeur
+    corps = "".join(f"--{c}:{v};" for c, v in jetons.items())
+    return f"{selecteur}{{{corps}}}"
+
+
+# Jetons de CHROME : tout ce qui, dans une figure, appartient à la surface et
+# non à la donnée. Les couleurs de séries n'y sont pas — elles passent les
+# contrôles sur les deux surfaces et ne changent donc jamais.
+JETONS_CHROME = ("INK", "INK_2", "INK_MUTED", "GRID", "AXIS", "SURFACE",
+                 "ELEVATION", "PLANE")
+
+
+def _triplet(couleur: str) -> str:
+    """« #eef2f7 » → « 238,242,247 », la forme qu'écrit `_rgba`."""
+    h = couleur.lstrip("#")
+    return ",".join(str(int(h[i:i + 2], 16)) for i in (0, 2, 4))
+
+
+def substitutions(de: str, vers: str) -> list[list[str]]:
+    """Couples de couleurs à substituer dans une figure DÉJÀ construite pour
+    passer d'une apparence à l'autre.
+
+    Une figure Plotly fige ses couleurs : l'encre d'une annotation, le fond
+    d'une piste, l'anneau de surface d'une marque. Un simple `relayout` du
+    thème ne les atteint pas. Cette table, appliquée à tout ce qui est chaîne
+    dans la figure, les atteint toutes — et seulement celles-là, puisque les
+    teintes de séries n'y figurent pas.
+    """
+    a, b = THEMES[de], THEMES[vers]
+    paires: list[list[str]] = []
+    for cle in JETONS_CHROME:
+        src, dst = a[cle], b[cle]
+        if src == dst or not src.startswith("#") or not dst.startswith("#"):
+            continue
+        # La forme « r,g,b » d'abord : elle est plus longue, donc prioritaire.
+        paires.append([_triplet(src), _triplet(dst)])
+        paires.append([src, dst])
+    return paires
+
+
+def chrome_plotly() -> dict[str, Any]:
+    """Couleurs de CHROME d'une figure — grille, axes, encre, infobulle.
+
+    Les marques n'y figurent pas : la palette de séries passe les contrôles sur
+    les deux surfaces (bleu de nuit et ivoire), elle n'a donc pas à changer. Ce
+    dictionnaire est ce que le rapport applique en `Plotly.relayout` quand on
+    bascule l'apparence.
+    """
+    return {
+        "font.color": INK_2,
+        "xaxis.gridcolor": GRID, "yaxis.gridcolor": GRID,
+        "xaxis.linecolor": AXIS, "yaxis.linecolor": AXIS,
+        "xaxis.tickcolor": AXIS, "yaxis.tickcolor": AXIS,
+        "xaxis.tickfont.color": INK_MUTED, "yaxis.tickfont.color": INK_MUTED,
+        "xaxis.title.font.color": INK_2, "yaxis.title.font.color": INK_2,
+        "legend.font.color": INK_2,
+        "hoverlabel.bgcolor": ELEVATION, "hoverlabel.bordercolor": AXIS,
+        "hoverlabel.font.color": INK,
+    }
 
 
 def _luminance(couleur: str) -> float:
@@ -2676,6 +2832,20 @@ SECTIONS: dict[str, str] = {
     "diagnostic": "Diagnostic",
 }
 
+# Le produit est en DEUX parties. La première se lit debout, en trois minutes,
+# et suffit à un dirigeant. La seconde répond aux « pourquoi » et aux
+# « combien exactement ». Cette partition vaut pour l'écran comme pour le
+# rapport : c'est la même architecture de l'information.
+PARTIES: dict[str, tuple[str, str]] = {
+    "direction": ("Direction", "Où en sommes-nous, et qu'est-ce qui a bougé."),
+    "analyse": ("Analyse", "Le détail, dimension par dimension."),
+}
+PARTIE_PAR_SECTION: dict[str, str] = {
+    "synthese": "direction",
+    "activite": "analyse", "rfp": "analyse", "dd": "analyse",
+    "aum": "analyse", "esg": "analyse", "diagnostic": "analyse",
+}
+
 
 @dataclass
 class Block:
@@ -3071,6 +3241,109 @@ def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
                  large=True)
 
 
+def _bloc_trimestre(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """Ce qui s'est passé, trimestre après trimestre — huit points de repère.
+
+    Quatre mouvements seulement, et seulement ceux qu'on sait dater : ce qui
+    arrive (réception), ce qui part (envoi), et ce que ça rapporte. Une décision
+    client n'a pas de date dans la base : elle ne figure donc pas ici, plutôt
+    que d'être rattachée à une date qui n'est pas la sienne.
+    """
+    if df.empty or len(df) < 20:
+        return None
+    trimestre_courant = pd.Timestamp.today().normalize().to_period("Q")
+    recus = df.assign(_t=df["date_reception"].dt.to_period("Q"))
+    envoyes = df[df["date_envoi"].notna()].assign(
+        _t=df.loc[df["date_envoi"].notna(), "date_envoi"].dt.to_period("Q"))
+
+    fin = recus["_t"].max()
+    periodes = pd.period_range(end=fin, periods=min(8, recus["_t"].nunique()), freq="Q")
+    if len(periodes) < 3:
+        return None
+
+    def serie(source: pd.DataFrame, masque: pd.Series | None = None,
+              colonne: str | None = None) -> list[float]:
+        sous = source if masque is None else source[masque.reindex(source.index, fill_value=False)]
+        if colonne:
+            groupe = sous.groupby("_t", observed=True)[colonne].sum()
+        else:
+            groupe = sous.groupby("_t", observed=True).size()
+        # Un trimestre sans mandat remporté vaut zéro, pas « donnée absente » :
+        # la distinction compte, et `or 0` laisserait passer un NaN.
+        valeurs = [groupe.get(p, 0.0) for p in periodes]
+        return [0.0 if pd.isna(v) else float(v) for v in valeurs]
+
+    mouvements = [
+        ("Questionnaires reçus", serie(recus), fmt_int, SERIES[0]),
+        ("Appels d'offres reçus", serie(recus, recus["est_rfp"]), fmt_int, SERIES[1]),
+        ("Réponses envoyées", serie(envoyes), fmt_int, SERIES[2]),
+        ("Encours remporté", serie(recus, None, "aum_gagne"),
+         lambda v: fmt_dec(v, 0, "M€"), ACCENT_2),
+    ]
+    mouvements = [m for m in mouvements if any(m[1])]
+    if not mouvements:
+        return None
+
+    libelles = [f"T{p.quarter} {p.year}" for p in periodes]
+    partiel = periodes[-1] == trimestre_courant
+    fig = make_subplots(rows=1, cols=len(mouvements), horizontal_spacing=0.055)
+    fig.update_layout(template=TEMPLATE_NAME, height=252, showlegend=False,
+                      margin=dict(l=4, r=4, t=64, b=26), bargap=0.34)
+
+    for colonne, (titre, valeurs, formateur, teinte) in enumerate(mouvements, start=1):
+        # Le trimestre en cours est incomplet : il se distingue au lieu de se
+        # faire passer pour un trimestre plein.
+        couleurs = [_rgba(teinte, 0.30) if (partiel and i == len(valeurs) - 1)
+                    else _rgba(teinte, 0.85) for i in range(len(valeurs))]
+        couleurs[-1] = couleurs[-1] if partiel else teinte
+        fig.add_trace(go.Bar(
+            x=libelles, y=valeurs, marker=_marque(couleurs, 1.2),
+            customdata=[formateur(v) for v in valeurs],
+            hovertemplate="<b>%{x}</b><br>%{customdata}<extra></extra>"),
+            row=1, col=colonne)
+        fig.update_yaxes(visible=False, rangemode="tozero",
+                         range=[0, max(valeurs) * 1.28 or 1], row=1, col=colonne)
+        fig.update_xaxes(showgrid=False, tickfont=dict(size=9.5, color=INK_MUTED),
+                         tickvals=[libelles[0], libelles[-1]], row=1, col=colonne)
+        ancre = "x domain" if colonne == 1 else f"x{colonne} domain"
+        ancre_y = "y domain" if colonne == 1 else f"y{colonne} domain"
+        fig.add_annotation(xref=ancre, yref=ancre_y, x=0, y=1.36, xanchor="left",
+                           text=titre.upper(), showarrow=False,
+                           font=dict(size=9.5, color=INK_MUTED, family=FONT_STACK))
+        fig.add_annotation(xref=ancre, yref=ancre_y, x=0, y=1.12, xanchor="left",
+                           text=f"<b>{formateur(valeurs[-1])}</b>", showarrow=False,
+                           font=dict(size=20, color=INK, family=FONT_STACK))
+        # Un trimestre en cours ne se compare pas : afficher « −100 % » sur un
+        # trimestre à moitié écoulé serait un chiffre faux présenté comme vrai.
+        ecart = (("", "neutre", "plat") if partiel else
+                 _delta(valeurs[-1], valeurs[-2] if len(valeurs) > 1 else None,
+                        mode="relatif"))
+        if ecart[0]:
+            fig.add_annotation(
+                xref=ancre, yref=ancre_y, x=1, y=1.12, xanchor="right",
+                text=ecart[0], showarrow=False,
+                font=dict(size=11, family=FONT_STACK,
+                          color={"bon": TEXTE_BON, "mauvais": TEXTE_MAUVAIS}.get(
+                              ecart[1], INK_MUTED)))
+
+    dernier = libelles[-1]
+    accroche = (f"{dernier} : {fmt_int(mouvements[0][1][-1])} questionnaires reçus"
+                + (" — trimestre en cours, donc incomplet." if partiel
+                   else f", contre {fmt_int(mouvements[0][1][-2])} au trimestre précédent."))
+    tableau = pd.DataFrame(
+        {"Trimestre": libelles}
+        | {titre: [formateur(v) for v in valeurs]
+           for titre, valeurs, formateur, _ in mouvements}).iloc[::-1]
+    return Block("trimestre", "synthese", "Les huit derniers trimestres", accroche, fig,
+                 tableau,
+                 note=("Le dernier trimestre est en cours : sa barre est atténuée et sa "
+                       "comparaison n'a pas de valeur. " if partiel else "")
+                      + "« Reçus » se date par la réception, « envoyées » par l'envoi, "
+                        "l'encours remporté par la réception du dossier gagné. Une décision "
+                        "client n'a pas de date dans la base : elle ne figure pas ici.",
+                 large=True)
+
+
 def _bloc_mandats_remportes(df: pd.DataFrame, mensuel: pd.DataFrame,
                             stats: dict) -> Block | None:
     """Les mandats remportés, un par ligne : qui, par quel canal, sur quelle
@@ -3164,7 +3437,7 @@ def _bloc_resultats_rfp(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) ->
     tableau = pd.DataFrame({
         "Résultat": list(comptes.index), "Dossiers": list(comptes.values),
         "Part": [fmt_pct(v / total, 1) for v in comptes.values]})
-    return Block("resultats_rfp", "synthese", "Résultat des appels d'offres",
+    return Block("resultats_rfp", "rfp", "Résultat des appels d'offres",
                  accroche, fig, tableau,
                  note="Les dossiers en attente de décision sortent du dénominateur du "
                       "taux de succès ; ils ne sont pas des échecs. « Sans suite » "
@@ -3200,7 +3473,7 @@ def _bloc_cadence(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block
     tableau = pivot.copy()
     tableau.insert(0, "Mois", [fmt_mois(i) for i in pivot.index])
     tableau["Total"] = pivot.sum(axis=1).to_numpy()
-    return Block("cadence", "synthese", "Cadence de traitement", accroche, fig,
+    return Block("cadence", "activite", "Cadence de traitement", accroche, fig,
                  tableau.reset_index(drop=True),
                  note="Comptage par date d'ENVOI : c'est la production de l'équipe, à "
                       "distinguer de la charge qui lui arrive.")
@@ -4197,14 +4470,15 @@ def _bloc_projection(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
 
 _CONSTRUCTEURS: tuple[Callable[[pd.DataFrame, pd.DataFrame, dict], Block | None], ...] = (
     # 01 Vue d'ensemble
-    _bloc_decomposition, _bloc_flux_famille, _bloc_resultats_rfp, _bloc_cadence,
-    _bloc_mandats_remportes,
+    # Quatre blocs, pas un de plus : où on en est, ce qui a bougé, la tendance
+    # longue, ce qu'on a gagné. Tout le reste appartient à la partie Analyse.
+    _bloc_decomposition, _bloc_trimestre, _bloc_flux_famille, _bloc_mandats_remportes,
     # 02 Activité
-    _bloc_volume_annuel, _bloc_delai_famille, _bloc_delai_evolution,
+    _bloc_volume_annuel, _bloc_cadence, _bloc_delai_famille, _bloc_delai_evolution,
     _bloc_saisonnalite, _bloc_charge_analyste,
     # 03 Pipeline RFP
-    _bloc_rfp_resultats_annee, _bloc_rfp_reception, _bloc_rfp_succes_dimension,
-    _bloc_rfp_consultants,
+    _bloc_resultats_rfp, _bloc_rfp_resultats_annee, _bloc_rfp_reception,
+    _bloc_rfp_succes_dimension, _bloc_rfp_consultants,
     # 04 Due diligence
     _bloc_dd_mensuel, _bloc_type_detail, _bloc_dd_expertise, _bloc_dd_pays,
     _bloc_dd_matrice,
@@ -4242,6 +4516,16 @@ class Analysis:
     @property
     def sections(self) -> list[tuple[str, str]]:
         return [(cle, libelle) for cle, libelle in SECTIONS.items() if self.section(cle)]
+
+    def parties_rapport(self) -> list[tuple[str, str, str, list[tuple[str, str]]]]:
+        """Les deux parties du rapport, chacune avec ses sections non vides."""
+        groupes = []
+        for cle, (libelle, accroche) in PARTIES.items():
+            sections = [(s, nom) for s, nom in self.sections_rapport
+                        if PARTIE_PAR_SECTION.get(s) == cle]
+            if sections:
+                groupes.append((cle, libelle, accroche, sections))
+        return groupes
 
     @property
     def sections_rapport(self) -> list[tuple[str, str]]:

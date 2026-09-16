@@ -202,6 +202,10 @@ TYPE_ORDER = ["RFP", "RFI", "DDQ"]
 SLA_JOURS_OUVRES = {"RFP": 15, "RFI": 8, "DDQ": 12}
 SLA_DEFAUT = 12
 
+# [BRANCHEMENT] Nombre de mandats détaillés dans la table « Mandats remportés »
+# de la vue d'ensemble ; au-delà, le reste est agrégé (le total reste exact).
+TOP_MANDATS = 15
+
 # [BRANCHEMENT] Horizon de projection de la tendance (mois)
 PROJECTION_MOIS = 6
 # [BRANCHEMENT] Seuil de significativité statistique
@@ -2679,7 +2683,9 @@ class Block:
     section: str
     titre: str
     accroche: str
-    figure: go.Figure
+    # None = le bloc EST un tableau. Certaines réponses ne sont pas des formes :
+    # « quels mandats avons-nous remportés » se lit ligne à ligne, pas en barres.
+    figure: go.Figure | None
     tableau: pd.DataFrame
     note: str = ""
     large: bool = False
@@ -2920,6 +2926,201 @@ def _bloc_flux_famille(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> 
                  tableau.reset_index(drop=True),
                  note="Volume reçu, et non traité : c'est la charge qui arrive au pôle. "
                       "La tendance est ajustée sur les périodes complètes uniquement.",
+                 large=True)
+
+
+def _bloc_decomposition(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Block | None:
+    """La décomposition que lit la manager : combien de questionnaires arrivent,
+    de quelle famille, et — pour les appels d'offres seuls — ce qu'ils deviennent.
+
+    Forme retenue : un arbre de nombres reliés, pas un pavage. Les effectifs vont
+    de 6 à 1 400 ; toute forme proportionnelle rendrait les petites branches
+    illisibles, alors que ce sont justement celles qui appellent une décision.
+    La proportion reste encodée, par la barre sous chaque nombre.
+
+    Une due diligence n'a pas de branche fille : elle n'a pas de résultat
+    commercial. L'arbre montre la règle au lieu de l'écrire.
+    """
+    total = nb_questionnaires(df)
+    if not total:
+        return None
+    n_dd, n_rfp = nb_famille(df, FAMILLE_DD), nb_famille(df, FAMILLE_RFP)
+    sans_famille = total - n_dd - n_rfp          # jamais masqué : il resterait un trou
+    livre = carnet(df)
+    couleurs_f = _couleurs_famille()
+    couleurs_compartiment = {
+        "en_cours": INK_MUTED, "en_attente": SERIES[0], "gagnes": STATUS_GOOD,
+        "perdus": STATUS_CRITICAL, "sans_suite": STATUS_SERIOUS,
+    }
+
+    # --- construction de l'arbre -------------------------------------------
+    # Un nœud = (clé, libellé, effectif, couleur, niveau, clé du parent).
+    noeuds: list[dict[str, Any]] = [
+        dict(cle="total", libelle="Questionnaires reçus", valeur=total,
+             couleur=INK_2, niveau=0, parent=None)]
+    feuilles: list[str] = []
+    if n_dd:
+        noeuds.append(dict(cle="dd", libelle=FAMILLE_DD, valeur=n_dd,
+                           couleur=couleurs_f[FAMILLE_DD], niveau=1, parent="total"))
+        feuilles.append("dd")
+    if n_rfp:
+        noeuds.append(dict(cle="rfp", libelle="Appels d'offres", valeur=n_rfp,
+                           couleur=couleurs_f[FAMILLE_RFP], niveau=1, parent="total"))
+        reste = n_rfp
+        for cle, libelle, _ in COMPARTIMENTS:
+            if livre.n(cle):
+                noeuds.append(dict(cle=f"c_{cle}", libelle=libelle, valeur=livre.n(cle),
+                                   couleur=couleurs_compartiment[cle], niveau=2,
+                                   parent="rfp"))
+                feuilles.append(f"c_{cle}")
+            reste -= livre.n(cle)
+        if reste > 0:      # un statut hors nomenclature ne disparaît pas
+            noeuds.append(dict(cle="c_reste", libelle="Statut non renseigné",
+                               valeur=reste, couleur=INK_MUTED, niveau=2, parent="rfp"))
+            feuilles.append("c_reste")
+    if sans_famille > 0:
+        noeuds.append(dict(cle="autre", libelle="Famille non renseignée",
+                           valeur=sans_famille, couleur=INK_MUTED, niveau=1,
+                           parent="total"))
+        feuilles.append("autre")
+    if len(noeuds) < 3:
+        return None
+
+    # --- mise en page : les feuilles régulièrement espacées, les parents
+    #     centrés sur leurs enfants. C'est la disposition d'arbre classique.
+    par_cle = {n["cle"]: n for n in noeuds}
+    for rang, cle in enumerate(feuilles):
+        par_cle[cle]["y"] = 1 - (rang + 0.5) / len(feuilles)
+    for cle in ("rfp", "total"):
+        noeud = par_cle.get(cle)
+        if noeud is None:
+            continue
+        enfants = [n["y"] for n in noeuds if n["parent"] == cle and "y" in n]
+        noeud["y"] = sum(enfants) / len(enfants) if enfants else 0.5
+
+    # Largeur de barre par niveau : la dernière colonne garde de la place pour
+    # le pourcentage posé à sa droite, qui serait sinon rogné.
+    COLONNES = {0: (0.00, 0.20), 1: (0.31, 0.20), 2: (0.62, 0.26)}
+    TAILLES = {0: 25, 1: 21, 2: 17}
+    fig = _fig(max(320, 74 * len(feuilles) + 52),
+               margin=dict(l=2, r=2, t=10, b=6), showlegend=False)
+    fig.update_xaxes(visible=False, range=[0, 1], fixedrange=True)
+    fig.update_yaxes(visible=False, range=[0, 1], fixedrange=True)
+
+    tranches = livre.n("gagnes") + livre.n("perdus")
+    bases, longueurs, hauteurs, teintes, survols = [], [], [], [], []
+
+    for noeud in noeuds:
+        x, largeur = COLONNES[noeud["niveau"]]
+        y, part = noeud["y"], noeud["valeur"] / total
+        parent = par_cle.get(noeud["parent"])
+        if parent is not None:
+            # Lien parent → enfant : une courbe fine, jamais une flèche.
+            xp, lp = COLONNES[parent["niveau"]]
+            depart, arrivee = xp + lp, x - 0.015
+            milieu = (depart + arrivee) / 2
+            fig.add_shape(type="path", layer="below",
+                          path=(f"M {depart},{parent['y']} C {milieu},{parent['y']} "
+                                f"{milieu},{y} {arrivee},{y}"),
+                          line=dict(color=AXIS, width=1))
+        # Piste de la barre de proportion (fond), puis la marque elle-même —
+        # une vraie marque de données, pour qu'elle porte le survol.
+        fig.add_shape(type="rect", x0=x, x1=x + largeur, y0=y - 0.058, y1=y - 0.044,
+                      fillcolor=_rgba(INK, 0.07), line_width=0, layer="below")
+        bases.append(x)
+        longueurs.append(largeur * max(part, 0.012))
+        hauteurs.append(y - 0.051)
+        teintes.append(noeud["couleur"])
+        detail = f"{pluriel(noeud['valeur'], 'questionnaire')} · {fmt_pct(part, 1)} du total reçu"
+        if noeud["cle"] in ("c_gagnes", "c_perdus") and tranches:
+            detail += f" · {fmt_pct(noeud['valeur'] / tranches, 0)} des dossiers tranchés"
+        survols.append(f"<b>{noeud['libelle']}</b><br>{detail}")
+        fig.add_annotation(x=x, y=y + 0.068, text=noeud["libelle"].upper(),
+                           showarrow=False, xanchor="left", yanchor="middle",
+                           font=dict(size=10.5, color=INK_MUTED, family=FONT_STACK))
+        fig.add_annotation(x=x, y=y + 0.012, text=f"<b>{fmt_int(noeud['valeur'])}</b>",
+                           showarrow=False, xanchor="left", yanchor="middle",
+                           font=dict(size=TAILLES[noeud["niveau"]], color=INK,
+                                     family=FONT_STACK))
+        fig.add_annotation(x=x + largeur, y=y - 0.051, text=fmt_pct(part, 1),
+                           showarrow=False, xanchor="left", yanchor="middle",
+                           xshift=6, font=dict(size=10.5, color=INK_MUTED,
+                                               family=FONT_STACK))
+
+    fig.add_trace(go.Bar(
+        x=longueurs, base=bases, y=hauteurs, orientation="h", width=0.014,
+        marker=dict(color=teintes, line_width=0), customdata=survols,
+        hovertemplate="%{customdata}<extra></extra>", showlegend=False))
+
+    gagnes = livre.n("gagnes")
+    accroche = (f"{fmt_int(total)} questionnaires reçus : {fmt_pct(n_dd / total, 0)} de due "
+                f"diligence, {fmt_int(n_rfp)} appels d'offres")
+    accroche += (f", dont {fmt_int(gagnes)} remportés sur {fmt_int(tranches)} tranchés."
+                 if tranches else ", aucun encore tranché.")
+
+    tableau = pd.DataFrame([{
+        "Niveau": ("Total", "Famille", "Résultat de l'appel d'offres")[n["niveau"]],
+        "Catégorie": n["libelle"], "Questionnaires": fmt_int(n["valeur"]),
+        "Part du total": fmt_pct(n["valeur"] / total, 1)} for n in noeuds])
+    return Block("decomposition", "synthese", "Décomposition de l'activité",
+                 accroche, fig, tableau,
+                 note="La branche « due diligence » n'a pas de suite : une due diligence "
+                      "se traite, elle ne se gagne pas. Les états d'un appel d'offres "
+                      "sont exclusifs et couvrent son total. La barre sous chaque nombre "
+                      "est sa part du total reçu.",
+                 large=True)
+
+
+def _bloc_mandats_remportes(df: pd.DataFrame, mensuel: pd.DataFrame,
+                            stats: dict) -> Block | None:
+    """Les mandats remportés, un par ligne : qui, par quel canal, sur quelle
+    classe d\u2019actifs, pour quel encours. La table de fin de revue.
+
+    Bloc sans figure : cette réponse-là se lit ligne à ligne.
+    """
+    gagnes = df[df["est_rfp"] & df["est_gagne"]]
+    if gagnes.empty:
+        return None
+    colonnes = [("client", "Client"), ("consultant", "Consultant"), ("pays", "Pays"),
+                ("classe_actifs", "Classe d\u2019actifs"),
+                ("sous_classe_actifs", "Sous-classe"),
+                ("forme_juridique", "Forme juridique"), ("fonds", "Fonds de référence")]
+    dispo = [(c, l) for c, l in colonnes if c in gagnes.columns]
+    if not dispo:
+        return None
+
+    tri = (gagnes.sort_values("montant_potentiel", ascending=False, na_position="last")
+           if "montant_potentiel" in gagnes.columns else gagnes)
+    tete = tri.head(TOP_MANDATS)
+    table = tete[[c for c, _ in dispo]].astype(object).fillna("—")
+    table.columns = [l for _, l in dispo]
+    if "montant_potentiel" in gagnes.columns:
+        table["Encours (M€)"] = [fmt_dec(v, 0) if pd.notna(v) else "—"
+                                 for v in tete["montant_potentiel"]]
+    table = table.reset_index(drop=True)
+
+    encours_total = aum_gagne(df)
+    if len(tri) > len(tete):
+        queue = tri.iloc[len(tete):]
+        ligne = {c: "" for c in table.columns}
+        ligne[table.columns[0]] = f"Autres mandats ({fmt_int(len(queue))})"
+        if "Encours (M€)" in table.columns:
+            ligne["Encours (M€)"] = fmt_dec(queue["montant_potentiel"].sum(skipna=True), 0)
+        table.loc[len(table)] = ligne
+    if "Encours (M€)" in table.columns:
+        totaux = {c: "" for c in table.columns}
+        totaux[table.columns[0]] = f"Total — {fmt_int(len(tri))} mandats"
+        totaux["Encours (M€)"] = fmt_dec(encours_total, 0)
+        table.loc[len(table)] = totaux
+
+    part = encours_total / len(tri) if len(tri) else float("nan")
+    accroche = (f"{fmt_int(len(tri))} mandats remportés, {fmt_dec(encours_total, 0, 'M€')} "
+                f"d\u2019encours, soit {fmt_dec(part, 0, 'M€')} par mandat en moyenne.")
+    return Block("mandats_remportes", "synthese", "Mandats remportés", accroche,
+                 None, table,
+                 note=f"Les {TOP_MANDATS} premiers par encours ; le reste est agrégé, le "
+                      f"total est exact. La liste complète est dans l\u2019explorateur, "
+                      f"filtrée sur les appels d\u2019offres gagnés.",
                  large=True)
 
 
@@ -3996,7 +4197,8 @@ def _bloc_projection(df: pd.DataFrame, mensuel: pd.DataFrame, stats: dict) -> Bl
 
 _CONSTRUCTEURS: tuple[Callable[[pd.DataFrame, pd.DataFrame, dict], Block | None], ...] = (
     # 01 Vue d'ensemble
-    _bloc_flux_famille, _bloc_resultats_rfp, _bloc_cadence,
+    _bloc_decomposition, _bloc_flux_famille, _bloc_resultats_rfp, _bloc_cadence,
+    _bloc_mandats_remportes,
     # 02 Activité
     _bloc_volume_annuel, _bloc_delai_famille, _bloc_delai_evolution,
     _bloc_saisonnalite, _bloc_charge_analyste,
@@ -4225,7 +4427,8 @@ def _autotest() -> None:
     manquantes = [c for c in SECTIONS if not analyse.section(c)]
     assert not manquantes, f"sections vides : {manquantes}"
     for bloc in analyse.blocs:
-        assert bloc.figure.data, f"{bloc.cle} : figure vide"
+        assert (bloc.figure is None or bloc.figure.data
+                or bloc.figure.layout.shapes), f"{bloc.cle} : figure vide"
         assert not bloc.tableau.empty, f"{bloc.cle} : tableau vide"
         assert bloc.accroche and bloc.titre
         assert bloc.dimension is None or bloc.dimension in DIMENSIONS

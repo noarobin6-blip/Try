@@ -109,7 +109,9 @@ documentée (`carnet`, `taux_succes_rfp`, `aum_gagne`, `cadence_mensuelle`,
 différemment, et le README ne peut pas dire autre chose que l'écran.
 
 **Ajouter une analyse** : écrire `_bloc_xxx(df, mensuel, stats)` qui renvoie un
-`Block`, puis l'inscrire dans `_CONSTRUCTEURS`. Elle apparaît automatiquement
+`Block`, puis l'inscrire dans `_CONSTRUCTEURS`. Un `Block` dont la figure est
+`None` **est** un tableau : il s'affiche déplié, à l'écran comme dans le rapport
+— certaines réponses se lisent ligne à ligne. Elle apparaît automatiquement
 dans la page de sa section **et** dans le rapport. Un bloc qui échoue est
 signalé dans la page qualité ; il n'interrompt jamais l'écran.
 
@@ -120,7 +122,7 @@ signalé dans la page qualité ; il n'interrompt jamais l'écran.
 | Page | Question à laquelle elle répond |
 |---|---|
 | **Accueil** | Où en sont les appels d'offres aujourd'hui, et lesquels ? |
-| **Vue d'ensemble** | Où en est l'activité, qu'est-ce qui demande une action ? |
+| **Vue d'ensemble** | La rétrospective, exercice par exercice. |
 | **Activité** | La charge augmente-t-elle ? À quelle vitesse la traite-t-on ? |
 | **Pipeline RFP** | Que deviennent les appels d'offres, et où gagne-t-on ? |
 | **Due diligence** | Quelles expertises et quels pays absorbent la charge ? |
@@ -150,6 +152,28 @@ aucune autre page :
 
 Chaque ligne est cliquable : elle ouvre l'explorateur sur ce client, où un
 second clic ouvre la fiche du dossier.
+
+### La vue d'ensemble
+
+C'est la rétrospective que présente la manager en comité, portée à l'écran :
+
+- **une bande d'exercices** — 2026, 2025, 2024… et « tout l'historique ». Chaque
+  tuile porte son volume et une barre proportionnelle ; cliquer change la fenêtre
+  **globale**, il n'y a pas deux notions de période dans le produit ;
+- **la décomposition de l'activité** — questionnaires reçus → due diligence /
+  appels d'offres → les cinq états d'un appel d'offres. La branche « due
+  diligence » n'a volontairement pas de suite : une due diligence se traite, elle
+  ne se gagne pas. Les effectifs vont de 6 à 1 400, donc la forme est un arbre de
+  nombres reliés et non un pavage proportionnel — la proportion reste encodée,
+  par la barre sous chaque nombre ;
+- **l'encours remporté** dans le bandeau d'indicateurs, avec sa variation face à
+  l'exercice précédent ;
+- **les mandats remportés**, un par ligne : client, consultant, pays, classe et
+  sous-classe d'actifs, forme juridique, fonds de référence, encours. Les quinze
+  premiers par encours, le reste agrégé, le total exact.
+
+Ces quatre éléments sont dans le rapport HTML à l'identique — c'est le même objet
+`Analysis` qui les produit.
 
 ### RFI et DDQ : à l'écran, pas dans le rapport
 
@@ -184,6 +208,11 @@ Une seule barre, sous le titre et au-dessus de tout ce qu'elle porte : période,
 puis les quatre dimensions de premier niveau, les autres derrière « Plus de
 filtres ». Les filtres actifs sont affichés en permanence — on ne lit jamais un
 chiffre sans savoir sur quoi il porte.
+
+La **période** accepte les fenêtres glissantes (12 / 24 / 36 derniers mois),
+l'historique complet, et les **exercices civils** — le pilotage se fait aussi en
+années pleines. La bande d'exercices de la vue d'ensemble n'est qu'une autre
+façon d'actionner ce même sélecteur.
 
 ---
 

@@ -200,6 +200,16 @@ summary::before{content:"";width:5px;height:5px;border-right:1.5px solid current
 details[open] summary::before{transform:rotate(45deg)}
 summary:hover{color:var(--ink-2)}
 .tableau{overflow-x:auto;margin-top:10px;border:1px solid var(--border);border-radius:var(--rayon)}
+/* Un tableau qui EST le bloc doit tenir dans la carte : les libellés passent à
+   la ligne plutôt que de pousser la dernière colonne — l'encours — hors champ. */
+.tableau--bloc{margin-top:14px;max-height:none}
+.tableau--bloc table{table-layout:fixed;font-size:11px}
+.tableau--bloc th,.tableau--bloc td{white-space:normal;padding:7px 9px;
+  overflow-wrap:anywhere;hyphens:auto}
+.tableau--bloc td:last-child,.tableau--bloc th:last-child{white-space:nowrap;width:9%}
+.tableau--bloc td:first-child,.tableau--bloc th:first-child{width:16%}
+.tableau--bloc tbody tr:nth-last-child(-n+2) td{font-weight:640;color:var(--ink)}
+.tableau--bloc tbody tr:last-child td{border-top:1px solid var(--border)}
 table{border-collapse:collapse;width:100%;font-size:11.5px;font-variant-numeric:tabular-nums}
 th,td{text-align:right;padding:7px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
 th{color:var(--muted);font-weight:650;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
@@ -352,16 +362,20 @@ def _carte_html(bloc: core.Block, indice: int) -> str:
     classe = "carte carte--large" if bloc.large else "carte"
     note = f'<div class="carte__note">{_e(bloc.note)}</div>' if bloc.note else ""
     tableau = _tableau_html(bloc.tableau)
-    details = (f'<details><summary>Voir les données '
-               f'({core.pluriel(len(bloc.tableau), "ligne")})</summary>'
-               f'<div class="tableau">{tableau}</div></details>' if tableau else "")
-    figure = pio.to_html(bloc.figure, include_plotlyjs=False, full_html=False,
-                         config=core.PLOT_CONFIG, div_id=f"graphique-{indice}",
-                         default_width="100%")
+    if bloc.figure is None:
+        # Le bloc EST un tableau : il s'affiche déplié, sans figure à attendre.
+        corps = f'<div class="tableau tableau--bloc">{tableau}</div>'
+    else:
+        details = (f'<details><summary>Voir les données '
+                   f'({core.pluriel(len(bloc.tableau), "ligne")})</summary>'
+                   f'<div class="tableau">{tableau}</div></details>' if tableau else "")
+        corps = pio.to_html(bloc.figure, include_plotlyjs=False, full_html=False,
+                            config=core.PLOT_CONFIG, div_id=f"graphique-{indice}",
+                            default_width="100%") + details
     return (f'<section class="{classe}" id="bloc-{_e(bloc.cle)}">'
             f'<div class="carte__titre">{_e(bloc.titre)}</div>'
             f'<div class="carte__accroche">{_e(bloc.accroche)}</div>'
-            f'{figure}{details}{note}</section>')
+            f'{corps}{note}</section>')
 
 
 def _synthese_html(analyse: core.Analysis) -> str:
@@ -863,11 +877,14 @@ def main() -> None:
     chemin = ecrire_rapport(analyse, options.sortie)
     poids = chemin.stat().st_size / 1_048_576
     # Compter ce qui part vraiment : les blocs d'écran ne sont pas dans le fichier.
-    diffuses = sum(len(analyse.section(cle, pour_rapport=True))
-                   for cle, _ in analyse.sections_rapport)
-    ecran = len(analyse.blocs) - diffuses
+    blocs = [b for cle, _ in analyse.sections_rapport
+             for b in analyse.section(cle, pour_rapport=True)]
+    figures = sum(1 for b in blocs if b.figure is not None)
+    tables = len(blocs) - figures
+    ecran = len(analyse.blocs) - len(blocs)
     print(f"Rapport écrit : {chemin.resolve()}  ({poids:.1f} Mo, "
-          f"{diffuses} graphiques, {len(analyse.kpis_rapport)} indicateurs)")
+          f"{core.pluriel(figures, 'graphique')}, {core.pluriel(tables, 'tableau', 'tableaux')}, "
+          f"{core.pluriel(len(analyse.kpis_rapport), 'indicateur')})")
     if ecran:
         print(f"{ecran} bloc{core.accord(ecran)} et "
               f"{len(analyse.kpis) - len(analyse.kpis_rapport)} indicateurs réservés à "

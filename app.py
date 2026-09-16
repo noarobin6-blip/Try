@@ -411,6 +411,29 @@ a.ligne:hover {{ background:var(--elevation); }}
 .registre--large .lignes > a.ligne:nth-child(odd) {{ border-right:1px solid
                           color-mix(in srgb, var(--border) 55%, transparent); }}
 
+/* Bande d'exercices : la rétrospective annuelle, en tête de vue d'ensemble. */
+.annees {{ display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px;
+           margin:2px 0 18px; }}
+@media (max-width:1240px) {{ .annees {{ grid-template-columns:repeat(3,minmax(0,1fr)); }} }}
+@media (max-width:640px) {{ .annees {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
+a.annee {{ display:block; padding:12px 14px 11px; background:var(--surface);
+  border:1px solid var(--border); border-radius:var(--rayon); text-decoration:none;
+  color:inherit; transition:border-color .16s ease, transform .16s ease; }}
+a.annee:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+                 transform:translateY(-1px); }}
+.annee b {{ display:block; font-size:19px; font-weight:620; letter-spacing:-.022em;
+            line-height:1.1; font-variant-numeric:tabular-nums; color:var(--ink); }}
+.annee__n {{ display:block; font-size:10.5px; color:var(--muted); margin-top:5px;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+.annee__barre {{ display:block; height:4px; margin-top:10px; border-radius:2px;
+  background:color-mix(in srgb, var(--ink) 9%, transparent); overflow:hidden; }}
+.annee__barre i {{ display:block; height:100%; background:var(--serie1); border-radius:2px; }}
+a.annee--actif {{ background:var(--accent); border-color:var(--accent); color:var(--sur-accent); }}
+.annee--actif b {{ color:var(--sur-accent); }}
+.annee--actif .annee__n {{ color:color-mix(in srgb, var(--sur-accent) 74%, transparent); }}
+.annee--actif .annee__barre {{ background:color-mix(in srgb, var(--sur-accent) 24%, transparent); }}
+.annee--actif .annee__barre i {{ background:var(--sur-accent); }}
+
 /* Bande due diligence : le détail RFI / DDQ, à l'écran seulement. */
 .bande {{ background:var(--surface); border:1px solid var(--border);
           border-radius:var(--rayon); padding:16px 20px 18px; margin-top:26px; }}
@@ -563,12 +586,37 @@ DATE_MIN = df_complet["date_reception"].min().date()
 DATE_MAX = df_complet["date_reception"].max().date()
 ANNEES = sorted(df_complet["date_reception"].dt.year.unique(), reverse=True)
 
-PERIODES = {
-    "12 derniers mois": 12,
-    "24 derniers mois": 24,
-    "36 derniers mois": 36,
-    "Historique complet": None,
+# Nombre d'exercices proposés dans la bande d'années de la vue d'ensemble.
+PROFONDEUR_ANNEES = 5
+
+# Années civiles présentes dans la base, de la plus récente à la plus ancienne.
+# Le pilotage se fait en exercices — « 2025 » — autant que sur des fenêtres
+# glissantes ; la rétrospective de la manager est annuelle.
+ANNEES = sorted(range(DATE_MIN.year, DATE_MAX.year + 1), reverse=True)[:PROFONDEUR_ANNEES]
+
+PERIODES: dict[str, tuple[str, int | None]] = {
+    "12 derniers mois": ("glissante", 12),
+    "24 derniers mois": ("glissante", 24),
+    "36 derniers mois": ("glissante", 36),
+    "Historique complet": ("tout", None),
+    **{str(a): ("annee", a) for a in ANNEES},
 }
+INDEX_HISTORIQUE = list(PERIODES).index("Historique complet")
+
+
+def bornes_periode(choix: str) -> tuple[dt.date, dt.date]:
+    """Traduit une fenêtre en deux dates. Une année civile est bornée au 1er
+    janvier et au 31 décembre, ramenés à la profondeur réelle des données."""
+    mode, valeur = PERIODES.get(choix, PERIODES["Historique complet"])
+    if mode == "tout":
+        return DATE_MIN, DATE_MAX
+    if mode == "annee":
+        return (max(DATE_MIN, dt.date(valeur, 1, 1)),
+                min(DATE_MAX, dt.date(valeur, 12, 31)))
+    # Fenêtre glissante alignée sur le 1er du mois : un seul mois partiel,
+    # celui en cours.
+    ancre = pd.Timestamp(DATE_MAX).replace(day=1) - pd.DateOffset(months=valeur - 1)
+    return max(DATE_MIN, ancre.date()), DATE_MAX
 
 
 # =============================================================================
@@ -582,34 +630,51 @@ def page_courante() -> str:
     return demandee
 
 
-def ajouter_filtre(champ: str, valeur: str, page: str | None = None) -> bool:
-    """Ajoute une modalité aux filtres actifs — c'est le drill-down.
-
-    Streamlit interdit d'écrire dans la clé d'un widget déjà affiché : on
-    recrée donc la génération de widgets en reportant l'état courant, ce qui
-    préserve les autres filtres et la période.
-    """
+def _etat_filtres() -> tuple[dict[str, list[str]], str | None]:
+    """L'état des widgets de la génération courante : dimensions et fenêtre."""
     generation = st.session_state.get("generation", 0)
-    report: dict[str, list[str]] = {}
-    for dimension in core.DIMENSIONS:
-        valeurs = list(st.session_state.get(f"dim_{dimension}_{generation}", []))
-        if valeurs:
-            report[dimension] = valeurs
-    deja = report.get(champ, [])
-    if valeur in deja:
-        return False
-    report[champ] = deja + [valeur]
-    periode = st.session_state.get(f"periode_{generation}")
+    dims = {d: list(st.session_state.get(f"dim_{d}_{generation}", []))
+            for d in core.DIMENSIONS}
+    return ({d: v for d, v in dims.items() if v},
+            st.session_state.get(f"periode_{generation}"))
 
-    suivante = generation + 1
+
+def _rejouer(dims: dict[str, list[str]], periode: str | None) -> None:
+    """Streamlit interdit d'écrire dans la clé d'un widget déjà affiché : on
+    recrée donc la génération de widgets en reportant l'état voulu. C'est le
+    seul mécanisme par lequel le produit modifie un filtre à la place de
+    l'utilisateur — drill-down, lien, réinitialisation."""
+    suivante = st.session_state.get("generation", 0) + 1
     st.session_state["generation"] = suivante
-    for dimension, valeurs in report.items():
+    for dimension, valeurs in dims.items():
         st.session_state[f"dim_{dimension}_{suivante}"] = valeurs
     if periode is not None:
         st.session_state[f"periode_{suivante}"] = periode
+
+
+def ajouter_filtre(champ: str, valeur: str, page: str | None = None) -> bool:
+    """Ajoute une modalité aux filtres actifs — c'est le drill-down."""
+    dims, periode = _etat_filtres()
+    deja = dims.get(champ, [])
+    if valeur in deja:
+        return False
+    dims[champ] = deja + [valeur]
+    _rejouer(dims, periode)
     if page:
         st.query_params["page"] = page
         st.session_state["page"] = page
+    return True
+
+
+def definir_periode(choix: str) -> bool:
+    """Change la fenêtre d'observation sans toucher aux filtres de dimension.
+    C'est ce qu'actionne la bande d'années de la vue d'ensemble."""
+    if choix not in PERIODES:
+        return False
+    dims, periode = _etat_filtres()
+    if periode == choix:
+        return False
+    _rejouer(dims, choix)
     return True
 
 
@@ -642,12 +707,16 @@ def _etat_depuis_url() -> None:
     """
     portes = {c: st.query_params[c] for c in core.DIMENSIONS if st.query_params.get(c)}
     recherche = st.query_params.get("q")
-    if not portes and recherche is None:
+    fenetre = st.query_params.get("periode")
+    if not portes and recherche is None and fenetre is None:
         return
-    signature = (tuple(sorted(portes.items())), recherche)
+    signature = (tuple(sorted(portes.items())), recherche, fenetre)
     if st.session_state.get("_url_lue") == signature:
         return
     st.session_state["_url_lue"] = signature
+    if fenetre is not None:
+        definir_periode(fenetre)
+        del st.query_params["periode"]
     for champ, valeur in portes.items():
         ajouter_filtre(champ, valeur)
         del st.query_params[champ]
@@ -716,15 +785,9 @@ def barre_filtres() -> core.Filters:
     colonnes = st.columns([1.3, 1, 1, 1, 1, 0.8], gap="small")
 
     with colonnes[0]:
-        choix = st.selectbox("Période", list(PERIODES), index=3,
+        choix = st.selectbox("Période", list(PERIODES), index=INDEX_HISTORIQUE,
                              key=f"periode_{generation}")
-    mode = PERIODES[choix]
-    if mode is None:
-        debut, fin = DATE_MIN, DATE_MAX
-    else:
-        # Fenêtre alignée sur le 1er du mois : un seul mois partiel, celui en cours.
-        ancre = pd.Timestamp(DATE_MAX).replace(day=1) - pd.DateOffset(months=mode - 1)
-        debut, fin = max(DATE_MIN, ancre.date()), DATE_MAX
+    debut, fin = bornes_periode(choix)
 
     dims: dict[str, list[str]] = {}
     principales = [c for c in core.DIMENSIONS_PRINCIPALES if c in df_complet.columns][:4]
@@ -868,6 +931,20 @@ def afficher_bloc(bloc: core.Block) -> None:
         st.markdown(f"<div class='carte__titre'>{bloc.titre}</div>"
                     f"<div class='carte__accroche'>{bloc.accroche}</div>",
                     unsafe_allow_html=True)
+        if bloc.figure is None:
+            # Le bloc EST un tableau : il s'affiche en entier — une ligne de
+            # total qu'il faut aller chercher en faisant défiler ne sert à rien.
+            premiere = bloc.tableau.columns[0]
+            st.dataframe(
+                bloc.tableau, hide_index=True,
+                height=min(900, 36 * (len(bloc.tableau) + 1) + 10),
+                column_config={premiere: st.column_config.TextColumn(premiere,
+                                                                     width="medium")},
+                **KW_TABLE)
+            if bloc.note:
+                st.markdown(f"<div class='carte__note'>{bloc.note}</div>",
+                            unsafe_allow_html=True)
+            return
         cliquable = bool(bloc.dimension) and SELECTION_DISPONIBLE
         if cliquable:
             # Sans clickmode, Plotly n'émet pas d'événement de sélection au clic.
@@ -1176,7 +1253,37 @@ def page_accueil() -> None:
         cartes_insights(analyse.insights[:3])
 
 
+def bande_annees() -> None:
+    """La rétrospective de la manager se lit par exercice, pas en mois glissants.
+
+    Chaque tuile porte son volume et une barre proportionnelle : la barre est
+    une donnée — le nombre de questionnaires de l'année, sur le périmètre
+    filtré — et non un décor. Cliquer une tuile change la fenêtre globale ;
+    il n'y a pas deux notions de période dans le produit.
+    """
+    sans_periode = core.Filters(date_min=DATE_MIN, date_max=DATE_MAX, dims=filtres.dims)
+    base = core.filter_data(df_complet, sans_periode)
+    volumes = base.groupby(base["date_reception"].dt.year).size() if not base.empty \
+        else pd.Series(dtype="int64")
+    maxi = float(volumes.max()) if len(volumes) else 1.0
+    courant = st.session_state.get(
+        f"periode_{st.session_state.get('generation', 0)}") or "Historique complet"
+
+    def tuile(libelle: str, cle: str, n: int, largeur: float) -> str:
+        actif = " annee--actif" if courant == cle else ""
+        return (f"<a class='annee{actif}' href='{_lien('synthese', periode=cle)}' "
+                f"target='_self'><b>{escape(libelle)}</b>"
+                f"<span class='annee__n'>{core.pluriel(n, 'questionnaire')}</span>"
+                f"<span class='annee__barre'><i style='width:{largeur:.1f}%'></i></span></a>")
+
+    tuiles = [tuile(str(a), str(a), int(volumes.get(a, 0)),
+                    int(volumes.get(a, 0)) / maxi * 100) for a in ANNEES]
+    tuiles.append(tuile("Tout l'historique", "Historique complet", len(base), 100.0))
+    st.markdown(f"<div class='annees'>{''.join(tuiles)}</div>", unsafe_allow_html=True)
+
+
 def page_synthese() -> None:
+    bande_annees()
     bandeau_kpis(analyse, KPIS_PAR_PAGE["synthese"])
     st.markdown(f"<div class='note-lecture'>{core.NOTE_CENSURE}</div>",
                 unsafe_allow_html=True)

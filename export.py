@@ -24,6 +24,9 @@ import plotly.io as pio
 import core
 
 CHEMIN_RAPPORT = Path("rapport.html")
+# Le rapport est le document DIFFUSÉ : son titre parle le vocabulaire du
+# comité — deux familles de dossiers, pas de types fins.
+TITRE_RAPPORT = "Activité RFP & Due Diligence"
 
 # Blocs repris dans la synthèse quand aucun constat n'est calculable
 CLES_SYNTHESE = ("flux_famille", "volume_annuel", "resultats_rfp", "rfp_succes",
@@ -62,14 +65,24 @@ def bibliotheque_plotly() -> str:
 #  Les couleurs passent par des variables CSS alimentées par le thème actif de
 #  core.py : une seule source, l'écran et le rapport ne peuvent pas diverger.
 # =============================================================================
+# Halo d'ambiance : une seule source lumineuse, très basse intensité. Le thème
+# maison s'en passe — un dégradé posé sur le bleu de nuit de la marque le salit.
+_AMBIANCE = ("radial-gradient(900px 520px at 78% -8%,"
+             "color-mix(in srgb,var(--serie1) 13%,transparent),transparent 62%),"
+             "radial-gradient(700px 420px at -6% 104%,"
+             "color-mix(in srgb,var(--serie1) 8%,transparent),transparent 60%)")
+
+
 def _variables_css() -> str:
     return (
         ":root{"
         f"--plane:{core.PLANE};--surface:{core.SURFACE};--elevation:{core.ELEVATION};"
         f"--ink:{core.INK};--ink-2:{core.INK_2};--muted:{core.INK_MUTED};"
         f"--grid:{core.GRID};--axis:{core.AXIS};--border:{core.BORDER};"
-        f"--accent:{core.ACCENT};--bon:{core.TEXTE_BON};--mauvais:{core.TEXTE_MAUVAIS};"
-        f"--serie1:{core.SERIES[0]};"
+        f"--accent:{core.ACCENT};--sur-accent:{core.SUR_ACCENT};"
+        f"--bon:{core.TEXTE_BON};--mauvais:{core.TEXTE_MAUVAIS};"
+        f"--serie1:{core.SERIES[0]};--or:{core.ACCENT_2};--rayon:{core.RAYON};"
+        f"--ambiance:{'none' if core.THEME == 'maison' else _AMBIANCE};"
         f"--font:{core.FONT_STACK};"
         "}"
     )
@@ -82,10 +95,7 @@ body{margin:0;background:var(--plane);color:var(--ink);font-family:var(--font);
      font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
      font-feature-settings:"cv05","ss01";overflow:hidden}
 
-/* Halo d'ambiance : une seule source lumineuse, très basse intensité. */
-.ambiance{position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:radial-gradient(900px 520px at 78% -8%,color-mix(in srgb,var(--serie1) 13%,transparent),transparent 62%),
-             radial-gradient(700px 420px at -6% 104%,color-mix(in srgb,var(--serie1) 8%,transparent),transparent 60%)}
+.ambiance{position:fixed;inset:0;pointer-events:none;z-index:0;background:var(--ambiance)}
 
 /* ---------------------------------------------------------------- rail --- */
 .rail{position:fixed;left:0;top:0;bottom:0;width:224px;z-index:3;
@@ -93,7 +103,19 @@ body{margin:0;background:var(--plane);color:var(--ink);font-family:var(--font);
   border-right:1px solid var(--border);background:color-mix(in srgb,var(--surface) 72%,transparent);
   backdrop-filter:blur(14px)}
 .rail__tete{display:flex;align-items:center;gap:11px}
-.rail__marque{width:38px;height:38px;flex:none}
+.rail__marque{width:38px;height:38px;flex:none;color:var(--accent)}
+.rail__marque svg,.couverture__marque svg{width:100%;height:100%;display:block}
+/* Les cinq flèches se tracent au chargement : une seule animation, sur un
+   tracé, pas un effet posé sur du contenu. */
+.couverture__marque{width:96px;height:96px;color:var(--accent);margin-bottom:26px}
+.couverture__marque path{stroke-dasharray:120;stroke-dashoffset:120;
+  animation:tracer .9s cubic-bezier(.22,.61,.36,1) forwards}
+.couverture__marque path:nth-child(3n+2){animation-delay:.10s}
+.couverture__marque path:nth-child(3n+3){animation-delay:.16s}
+.couverture__marque path:nth-child(n+7){animation-delay:.22s}
+.couverture__marque path:nth-child(n+13){animation-delay:.34s}
+.couverture__marque path:last-child{animation-delay:.52s}
+@keyframes tracer{to{stroke-dashoffset:0}}
 .rail__titre{font-size:12.5px;font-weight:620;letter-spacing:-.01em;line-height:1.25}
 .rail__titre span{display:block;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
   color:var(--muted);font-weight:600;margin-top:3px}
@@ -105,8 +127,8 @@ body{margin:0;background:var(--plane);color:var(--ink);font-family:var(--font);
 .lien .num{font-size:10px;font-weight:700;letter-spacing:.08em;opacity:.75;
   font-variant-numeric:tabular-nums}
 .lien:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 6%,transparent)}
-.lien[aria-current="page"]{color:var(--ink);background:color-mix(in srgb,var(--serie1) 15%,transparent)}
-.lien[aria-current="page"] .num{color:var(--serie1);opacity:1}
+.lien[aria-current="page"]{color:var(--ink);background:color-mix(in srgb,var(--accent) 16%,transparent)}
+.lien[aria-current="page"] .num{color:var(--accent);opacity:1}
 .rail__pied{margin-top:auto;font-size:10.5px;color:var(--muted);line-height:1.6;
   border-top:1px solid var(--border);padding-top:14px}
 
@@ -127,13 +149,13 @@ main{position:relative;z-index:1;margin-left:224px;height:100vh;overflow-y:auto;
   font-weight:650}
 .couverture h1{font-size:clamp(44px,5.4vw,78px);font-weight:600;letter-spacing:-.035em;
   line-height:1.02;margin:16px 0 0;max-width:15ch}
-.couverture h1 em{font-style:normal;color:var(--serie1)}
+.couverture h1 em{font-style:normal;color:var(--accent)}
 .couverture .accroche{margin-top:22px;font-size:16.5px;color:var(--ink-2);max-width:62ch;
   line-height:1.6;font-variant-numeric:tabular-nums}
 .couverture .portee{margin-top:10px;font-size:12.5px;color:var(--muted);max-width:70ch;
   padding-left:12px;border-left:2px solid var(--border)}
 .heros{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin-top:46px;
-  background:var(--border);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  background:var(--border);border:1px solid var(--border);border-radius:var(--rayon);overflow:hidden}
 .heros .h{background:var(--surface);padding:20px 22px 18px}
 .heros .h__label{font-size:10px;letter-spacing:.11em;text-transform:uppercase;
   color:var(--muted);font-weight:650}
@@ -143,22 +165,22 @@ main{position:relative;z-index:1;margin-left:224px;height:100vh;overflow-y:auto;
 .flux{position:absolute;left:0;right:0;bottom:-10px;height:230px;opacity:.5;
   pointer-events:none;z-index:-1}
 .entrer{margin-top:40px;display:inline-flex;align-items:center;gap:10px;align-self:flex-start;
-  background:var(--serie1);color:#fff;border:0;border-radius:999px;padding:12px 22px;
+  background:var(--accent);color:var(--sur-accent);border:0;border-radius:999px;padding:12px 22px;
   font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;
   transition:transform .18s ease,box-shadow .18s ease}
-.entrer:hover{transform:translateY(-1px);box-shadow:0 8px 26px color-mix(in srgb,var(--serie1) 38%,transparent)}
+.entrer:hover{transform:translateY(-1px);box-shadow:0 8px 26px color-mix(in srgb,var(--accent) 34%,transparent)}
 
 /* ------------------------------------------------------------- section --- */
 .tete{display:flex;align-items:flex-end;gap:18px;padding-bottom:16px;margin-bottom:24px;
   border-bottom:1px solid var(--border)}
 .tete .num{font-size:52px;font-weight:600;letter-spacing:-.04em;line-height:.85;
-  color:color-mix(in srgb,var(--serie1) 55%,var(--muted));font-variant-numeric:tabular-nums}
+  color:color-mix(in srgb,var(--accent) 62%,var(--muted));font-variant-numeric:tabular-nums}
 .tete h2{font-size:26px;font-weight:600;letter-spacing:-.025em;margin:0}
 .tete .compte{margin-left:auto;font-size:11.5px;color:var(--muted);white-space:nowrap}
 
 .grille{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px}
 .carte{grid-column:span 6;background:var(--surface);border:1px solid var(--border);
-  border-radius:14px;padding:20px 22px 16px;opacity:0;transform:translateY(16px);
+  border-radius:var(--rayon);padding:20px 22px 16px;opacity:0;transform:translateY(16px);
   transition:opacity .5s ease,transform .5s cubic-bezier(.22,.61,.36,1),border-color .2s ease}
 .carte.vue{opacity:1;transform:none}
 .carte:hover{border-color:color-mix(in srgb,var(--ink) 18%,transparent)}
@@ -177,7 +199,7 @@ summary::before{content:"";width:5px;height:5px;border-right:1.5px solid current
   border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .2s ease}
 details[open] summary::before{transform:rotate(45deg)}
 summary:hover{color:var(--ink-2)}
-.tableau{overflow-x:auto;margin-top:10px;border:1px solid var(--border);border-radius:10px}
+.tableau{overflow-x:auto;margin-top:10px;border:1px solid var(--border);border-radius:var(--rayon)}
 table{border-collapse:collapse;width:100%;font-size:11.5px;font-variant-numeric:tabular-nums}
 th,td{text-align:right;padding:7px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
 th{color:var(--muted);font-weight:650;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
@@ -188,7 +210,7 @@ tbody tr:hover td{background:color-mix(in srgb,var(--serie1) 7%,transparent)}
 
 /* ----------------------------------------------------------- indicateurs -- */
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px}
-.kpi{background:var(--surface);border:1px solid var(--border);border-radius:13px;
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
   padding:16px 18px 14px}
 .kpi__label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
   font-weight:650}
@@ -205,19 +227,19 @@ tbody tr:hover td{background:color-mix(in srgb,var(--serie1) 7%,transparent)}
   padding-left:12px;margin:0 0 26px;line-height:1.55;max-width:104ch}
 
 /* ------------------------------------------------------------- synthèse -- */
-.synthese{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+.synthese{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
   padding:22px 26px;margin-bottom:22px}
 .synthese h3{margin:0 0 14px;font-size:15px;font-weight:620;letter-spacing:-.015em}
 .synthese ul{margin:0;padding:0;list-style:none;display:grid;gap:11px}
 .synthese li{font-size:12.5px;color:var(--ink-2);line-height:1.55;padding-left:16px;
   position:relative}
 .synthese li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;
-  border-radius:50%;background:var(--serie1)}
+  border-radius:50%;background:var(--accent)}
 .synthese li b{color:var(--ink);font-weight:560}
 .synthese li .appui{color:var(--muted);font-size:11.5px;display:inline-block;margin-top:3px}
 
 /* ------------------------------------------------------------- annexe ---- */
-.annexe{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+.annexe{background:var(--surface);border:1px solid var(--border);border-radius:var(--rayon);
   padding:24px 28px;font-size:12.5px;color:var(--ink-2)}
 .annexe h3{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
   margin:26px 0 10px;font-weight:650}
@@ -307,8 +329,8 @@ def _kpi_html(kpi: core.Kpi) -> str:
 
 def _heros_html(analyse: core.Analysis) -> str:
     """Les quatre chiffres de couverture, animés au chargement."""
-    par_cle = {k.cle: k for k in analyse.kpis}
-    choisis = [par_cle[c] for c in CLES_HEROS if c in par_cle] or analyse.kpis[:4]
+    par_cle = {k.cle: k for k in analyse.kpis_rapport}
+    choisis = [par_cle[c] for c in CLES_HEROS if c in par_cle] or analyse.kpis_rapport[:4]
     cases = []
     for kpi in choisis:
         cases.append(
@@ -330,7 +352,8 @@ def _carte_html(bloc: core.Block, indice: int) -> str:
     classe = "carte carte--large" if bloc.large else "carte"
     note = f'<div class="carte__note">{_e(bloc.note)}</div>' if bloc.note else ""
     tableau = _tableau_html(bloc.tableau)
-    details = (f'<details><summary>Voir les données ({len(bloc.tableau)} ligne(s))</summary>'
+    details = (f'<details><summary>Voir les données '
+               f'({core.pluriel(len(bloc.tableau), "ligne")})</summary>'
                f'<div class="tableau">{tableau}</div></details>' if tableau else "")
     figure = pio.to_html(bloc.figure, include_plotlyjs=False, full_html=False,
                          config=core.PLOT_CONFIG, div_id=f"graphique-{indice}",
@@ -363,9 +386,9 @@ def _annexe_html(analyse: core.Analysis) -> str:
     lignes.append("<dt>Délai de traitement</dt><dd>Nombre de jours <b>ouvrés</b> entre la date de "
                   "réception de la demande et la date d'envoi de la réponse. Les dossiers non "
                   "envoyés n'entrent dans aucune statistique de délai.</dd>")
-    cibles = ", ".join(f"{k} : {v} jours" for k, v in core.SLA_JOURS_OUVRES.items())
-    lignes.append(f"<dt>Délai cible</dt><dd>Engagement interne par type de demande "
-                  f"({cibles}). Paramétrable dans <code>core.py</code>.</dd>")
+    lignes.append(f"<dt>Délai cible</dt><dd>Engagement interne de traitement "
+                  f"({_e(core.sla_libelle(par_famille=True))}). Paramétrable dans "
+                  f"<code>core.py</code>.</dd>")
     lignes.append("<dt>Taux de succès</dt><dd>Mandats gagnés rapportés aux dossiers tranchés "
                   "(gagnés + perdus). Les dossiers en attente de décision sont exclus du "
                   "dénominateur, jamais comptés comme des échecs.</dd>")
@@ -381,7 +404,8 @@ def _annexe_html(analyse: core.Analysis) -> str:
         lignes.append(
             f"<dt>Tendance du flux mensuel</dt><dd>Moindres carrés ordinaires du volume mensuel "
             f"sur le rang du mois (mois en cours exclu) : pente "
-            f"{core.fmt_dec(tendance.pente, 2)} demande(s) par mois, "
+            f"{core.fmt_dec(tendance.pente, 2)} demande{core.accord(tendance.pente)} "
+            f"par mois, "
             f"R² = {core.fmt_dec(tendance.r2, 2)}, {core.fmt_p(tendance.p_value)}, "
             f"n = {core.fmt_int(tendance.n)} mois.</dd>")
     reg_q = stats.get("regression_questions")
@@ -408,8 +432,10 @@ def _annexe_html(analyse: core.Analysis) -> str:
         lignes.append("<h3>Qualité des données</h3>")
         lignes.append(
             f"<p>Source : <b>{_e(rapport.source)}</b>. "
-            f"{core.fmt_int(rapport.n_lignes_source)} ligne(s) lue(s), "
-            f"<b>{core.fmt_int(rapport.n_lignes_retenues)}</b> retenue(s) après normalisation.</p>")
+            f"{core.pluriel(rapport.n_lignes_source, 'ligne')} "
+            f"lue{core.accord(rapport.n_lignes_source)}, "
+            f"<b>{core.fmt_int(rapport.n_lignes_retenues)}</b> "
+            f"retenue{core.accord(rapport.n_lignes_retenues)} après normalisation.</p>")
         if rapport.alertes:
             lignes.append("<ul>" + "".join(f"<li>{_e(a)}</li>" for a in rapport.alertes) + "</ul>")
         else:
@@ -556,18 +582,27 @@ SCRIPT = r"""
 # =============================================================================
 #  ASSEMBLAGE
 # =============================================================================
-def construire_rapport(analyse: core.Analysis, titre: str = "Activité RFP / RFI") -> str:
-    """Retourne le document HTML complet sous forme de chaîne."""
+def construire_rapport(analyse: core.Analysis, titre: str = TITRE_RAPPORT) -> str:
+    """Retourne le document HTML complet sous forme de chaîne.
+
+    Le rapport est le document DIFFUSÉ : il s'en tient aux deux familles du
+    pilotage, RFP et due diligence. Les blocs et indicateurs marqués
+    `hors_rapport` — le détail RFI / DDQ — restent à l'écran.
+    """
     if analyse.vide:
         raise ValueError("Aucune donnée à exporter : la sélection est vide.")
 
-    sections = analyse.sections
+    sections = analyse.sections_rapport
+    n_analyses = sum(len(analyse.section(cle, pour_rapport=True)) for cle, _ in sections)
     pages: list[str] = []
     liens: list[str] = []
     indice_figure = 0
 
     # ---- Page 0 : couverture --------------------------------------------
     flux = ('<div class="flux" id="lottie-flux"></div>' if core.animation("flux") else "")
+    logo = core.logo_svg()
+    marque_couverture = f'<div class="couverture__marque">{logo}</div>' if logo else ""
+
     liens.append('<button class="lien" type="button"><span class="num">00</span>'
                  'Couverture</button>')
     # Le périmètre ne s'affiche que s'il restreint quelque chose : sur
@@ -577,10 +612,11 @@ def construire_rapport(analyse: core.Analysis, titre: str = "Activité RFP / RFI
     pages.append(
         '<section class="page couverture">'
         f'{flux}'
-        '<div class="sur">Pôle réponse aux appels d\'offres · Gestion d\'actifs</div>'
-        '<h1>Activité <em>RFP / RFI</em></h1>'
+        f'{marque_couverture}'
+        f'<div class="sur">{_e(core.MARQUE_NOM)} · {_e(core.MARQUE_ACTIVITE)}</div>'
+        '<h1>Activité <em>RFP &amp;&nbsp;Due&nbsp;Diligence</em></h1>'
         f'<p class="accroche">{core.fmt_int(len(analyse.df))} demandes analysées'
-        f'&#8239;·&#8239;{len(analyse.blocs)} analyses'
+        f'&#8239;·&#8239;{core.pluriel(n_analyses, "analyse")}'
         f'&#8239;·&#8239;{_e(analyse.periode)}</p>'
         f'{portee}'
         f'{_heros_html(analyse)}'
@@ -589,14 +625,14 @@ def construire_rapport(analyse: core.Analysis, titre: str = "Activité RFP / RFI
 
     # ---- Pages 1..n : une par section ------------------------------------
     for numero, (cle, libelle) in enumerate(sections, start=1):
-        blocs = analyse.section(cle)
+        blocs = analyse.section(cle, pour_rapport=True)
         cartes = []
         for bloc in blocs:
             cartes.append(_carte_html(bloc, indice_figure))
             indice_figure += 1
         entete = (f'<div class="tete"><span class="num">{numero:02d}</span>'
                   f'<h2>{_e(libelle)}</h2>'
-                  f'<span class="compte">{len(blocs)} analyse(s)</span></div>')
+                  f'<span class="compte">{core.pluriel(len(blocs), "analyse")}</span></div>')
         # Les indicateurs et la synthèse ouvrent la première section.
         ouverture = ""
         if numero == 1:
@@ -606,7 +642,7 @@ def construire_rapport(analyse: core.Analysis, titre: str = "Activité RFP / RFI
                 comparaison = (f" Les variations sont mesurées face à la période précédente de "
                                f"même durée ({core.fmt_date(fenetre[0])} → "
                                f"{core.fmt_date(fenetre[1])}).")
-            ouverture = (f'<div class="kpis">{"".join(_kpi_html(k) for k in analyse.kpis)}</div>'
+            ouverture = (f'<div class="kpis">{"".join(_kpi_html(k) for k in analyse.kpis_rapport)}</div>'
                          f'<p class="avertissement">{_e(core.NOTE_CENSURE)}{_e(comparaison)}</p>'
                          f'{_synthese_html(analyse)}')
         liens.append(f'<button class="lien" type="button"><span class="num">{numero:02d}</span>'
@@ -629,7 +665,8 @@ def construire_rapport(analyse: core.Analysis, titre: str = "Activité RFP / RFI
     bloc_lottie = (f'<script>{lecteur}</script>'
                    f'<script>window.ANIMATIONS={json.dumps(animations, separators=(",", ":"))};</script>'
                    if lecteur and animations else "")
-    marque = ('<div class="rail__marque" id="lottie-marque"></div>'
+    marque = (f'<div class="rail__marque">{logo}</div>' if logo else
+              '<div class="rail__marque" id="lottie-marque"></div>'
               if animations.get("marque") else "")
     genere = analyse.genere_le.strftime("%d/%m/%Y à %H:%M")
 
@@ -650,7 +687,7 @@ def construire_rapport(analyse: core.Analysis, titre: str = "Activité RFP / RFI
 <aside class="rail">
   <div class="rail__tete">
     {marque}
-    <div class="rail__titre">{_e(titre)}<span>Rapport d'activité</span></div>
+    <div class="rail__titre">{_e(core.MARQUE_NOM)}<span>{_e(core.MARQUE_PRODUIT)}</span></div>
   </div>
   <nav>{"".join(liens)}</nav>
   <div class="barre">
@@ -674,23 +711,145 @@ def construire_rapport(analyse: core.Analysis, titre: str = "Activité RFP / RFI
 
 
 def ecrire_rapport(analyse: core.Analysis, chemin: str | Path = CHEMIN_RAPPORT,
-                   titre: str = "Activité RFP / RFI") -> Path:
+                   titre: str = TITRE_RAPPORT) -> Path:
     """Écrit le rapport sur le disque et retourne son chemin."""
     chemin = Path(chemin)
     chemin.write_text(construire_rapport(analyse, titre), encoding="utf-8")
     return chemin
 
 
+# =============================================================================
+#  ÉTAT DU CARNET DANS LE README — la page d'accueil du dépôt
+# -----------------------------------------------------------------------------
+#  GitHub affiche le README comme page d'accueil du dépôt : autant qu'il dise
+#  où en est l'activité, et pas seulement comment lancer l'application. Le bloc
+#  est délimité par deux balises et réécrit par `python export.py --readme` ;
+#  tout ce qui est en dehors n'est jamais touché.
+# =============================================================================
+CHEMIN_README = Path("README.md")
+BALISE_DEBUT = "<!-- ÉTAT : début — généré par `python export.py --readme`, ne pas éditer -->"
+BALISE_FIN = "<!-- ÉTAT : fin -->"
+
+
+def _ligne_readme(ligne: pd.Series, valeur: str) -> str:
+    contexte = " · ".join(
+        str(ligne[c]) for c in ("pays", "classe_actifs")
+        if c in ligne.index and pd.notna(ligne[c]) and str(ligne[c]) != core.VALEUR_INCONNUE)
+    return f"| {ligne.get('client', '—')} | {contexte or '—'} | {valeur} |"
+
+
+def etat_markdown(df: pd.DataFrame, rapport: core.LoadReport) -> str:
+    """L'état du carnet en Markdown : les mêmes chiffres que la page d'accueil,
+    produits par les mêmes fonctions. Aucun calcul n'est refait ici."""
+    livre = core.carnet(df)
+    taux, gagnes, tranches, _ = core.taux_succes_rfp(df)
+    aujourdhui = core.fmt_date_longue(df["date_reception"].max())
+
+    lignes = [BALISE_DEBUT, "", f"## État du carnet au {aujourdhui}", ""]
+
+    # L'avertissement se déduit de la SOURCE réelle : il disparaît de lui-même
+    # le jour où le vrai classeur est branché, et ne peut pas être oublié.
+    if "synthétique" in rapport.source.lower():
+        lignes += ["> **Jeu de démonstration.** Les chiffres de cette page sont produits "
+                   "par le générateur livré avec le dépôt. Ils reproduisent la FORME d'une "
+                   "activité réelle — saisonnalité, délais, concentration de la collecte — "
+                   "mais aucun ne décrit une activité réelle, et aucun client nommé "
+                   "n'existe. Voir « Brancher vos données ».", ""]
+
+    lignes += [
+        "| Appels d'offres vivants | Encours en jeu | Taux de succès | Encours remporté |",
+        "|---:|---:|---:|---:|",
+        f"| **{core.fmt_int(livre.vivants)}** "
+        f"| **{core.fmt_dec(core.aum_en_jeu(df), 0, 'M€')}** "
+        f"| **{core.fmt_pct(taux, 1)}** "
+        f"| **{core.fmt_dec(core.aum_gagne(df), 0, 'M€')}** |", "",
+        f"<sub>{core.fmt_int(gagnes)} mandats remportés sur "
+        f"{core.fmt_int(tranches)} dossiers tranchés. Les dossiers en attente de décision "
+        f"sont exclus du dénominateur.</sub>", "",
+        "| Compartiment | Dossiers | Encours |", "|---|---:|---:|",
+    ]
+    for cle, libelle, sens in core.COMPARTIMENTS:
+        lignes.append(f"| {libelle} <sub>{sens}</sub> | {core.fmt_int(livre.n(cle))} "
+                      f"| {core.fmt_dec(livre.encours(cle), 0, 'M€')} |")
+    lignes.append("")
+
+    tableaux = [
+        ("En attente de décision", livre.en_attente, "Attente",
+         lambda l: (f"{core.fmt_int(l['jours_attente'])} j"
+                    if pd.notna(l["jours_attente"]) else "—")),
+        ("Gagnés", livre.gagnes, "Encours",
+         lambda l: core.fmt_dec(l.get("montant_potentiel"), 0, "M€")),
+        ("Perdus", livre.perdus, "Encours",
+         lambda l: core.fmt_dec(l.get("montant_potentiel"), 0, "M€")),
+    ]
+    for titre, sous, colonne, valeur in tableaux:
+        lignes.append(f"### {titre} — {core.fmt_int(len(sous))}")
+        lignes.append("")
+        if sous.empty:
+            lignes += ["_Aucun dossier dans ce compartiment._", ""]
+            continue
+        lignes += [f"| Dossier | | {colonne} |", "|---|---|---:|"]
+        lignes += [_ligne_readme(l, valeur(l)) for _, l in sous.head(5).iterrows()]
+        if len(sous) > 5:
+            lignes.append(f"| _… et {core.pluriel(len(sous) - 5, 'autre')}_ | | |")
+        lignes.append("")
+
+    types = core.repartition_type(df)
+    detail = " · ".join(f"**{core.fmt_int(n)}** {t}" for t, n in types.items())
+    lignes += [
+        f"Mix des demandes : {detail}. Le rapport diffusé, lui, s'en tient aux deux "
+        f"familles de pilotage — RFP et due diligence.", "",
+        f"> Source : {rapport.source}. "
+        f"{core.pluriel(rapport.n_lignes_retenues, 'ligne')} exploitable"
+        f"{core.accord(rapport.n_lignes_retenues)} sur "
+        f"{core.fmt_int(rapport.n_lignes_source)}. "
+        f"Bloc régénéré par `python export.py --readme`.", "",
+        BALISE_FIN,
+    ]
+    return "\n".join(lignes)
+
+
+def ecrire_etat_readme(df: pd.DataFrame, rapport: core.LoadReport,
+                       chemin: str | Path = CHEMIN_README) -> Path:
+    """Remplace le bloc balisé du README. Le reste du fichier est intouché ;
+    si les balises manquent, le bloc est inséré après le titre de premier niveau."""
+    chemin = Path(chemin)
+    texte = chemin.read_text(encoding="utf-8")
+    bloc = etat_markdown(df, rapport)
+    debut, fin = texte.find(BALISE_DEBUT), texte.find(BALISE_FIN)
+    if debut != -1 and fin > debut:
+        texte = texte[:debut] + bloc + texte[fin + len(BALISE_FIN):]
+    else:
+        lignes = texte.split("\n")
+        i = next((n for n, l in enumerate(lignes) if l.startswith("# ")), -1) + 1
+        texte = "\n".join(lignes[:i] + ["", bloc] + lignes[i:])
+    chemin.write_text(texte, encoding="utf-8")
+    return chemin
+
+
 def main() -> None:
     """Génération en ligne de commande, sur l'historique complet."""
-    parseur = argparse.ArgumentParser(description="Rapport d'activité RFP / RFI autonome.")
+    parseur = argparse.ArgumentParser(
+        description="Rapport d'activité RFP & due diligence, autonome.")
     parseur.add_argument("--clair", action="store_true",
                          help="thème clair, adapté à l'impression papier")
     parseur.add_argument("--sortie", default=str(CHEMIN_RAPPORT),
                          help="chemin du fichier HTML produit")
+    parseur.add_argument("--readme", action="store_true",
+                         help="met à jour l'état du carnet dans README.md, sans "
+                              "produire de rapport")
     options = parseur.parse_args()
 
-    core.appliquer_theme("clair" if options.clair else "sombre")
+    if options.readme:
+        df, rapport = core.load_data()
+        chemin = ecrire_etat_readme(df, rapport)
+        livre = core.carnet(df)
+        print(f"État écrit dans {chemin.resolve()} : {core.fmt_int(livre.vivants)} "
+              f"appels d'offres vivants, {core.fmt_int(livre.n('gagnes'))} gagnés, "
+              f"{core.fmt_int(livre.n('perdus'))} perdus.")
+        return
+
+    core.appliquer_theme("clair" if options.clair else core.THEME_DEFAUT)
     print(f"Thème : {core.THEME}")
     print("Chargement des données…")
     df, rapport = core.load_data()
@@ -703,8 +862,16 @@ def main() -> None:
         print("Avertissements :", *analyse.erreurs, sep="\n  - ")
     chemin = ecrire_rapport(analyse, options.sortie)
     poids = chemin.stat().st_size / 1_048_576
+    # Compter ce qui part vraiment : les blocs d'écran ne sont pas dans le fichier.
+    diffuses = sum(len(analyse.section(cle, pour_rapport=True))
+                   for cle, _ in analyse.sections_rapport)
+    ecran = len(analyse.blocs) - diffuses
     print(f"Rapport écrit : {chemin.resolve()}  ({poids:.1f} Mo, "
-          f"{len(analyse.blocs)} graphiques, {len(analyse.kpis)} indicateurs)")
+          f"{diffuses} graphiques, {len(analyse.kpis_rapport)} indicateurs)")
+    if ecran:
+        print(f"{ecran} bloc{core.accord(ecran)} et "
+              f"{len(analyse.kpis) - len(analyse.kpis_rapport)} indicateurs réservés à "
+              f"l'écran (détail RFI / DDQ) n'y figurent pas.")
     print("Ouvrable d'un double-clic, sans Python ni connexion réseau.")
 
 

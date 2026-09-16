@@ -1,12 +1,70 @@
 # RFP Intelligence
 
 Produit de pilotage de l'activité **RFP / Due Diligence** d'une société de
-gestion d'actifs. Il répond aux six questions qui structurent le pilotage du
-pôle : combien de demandes arrivent, dans quelle proportion RFP / due diligence,
-à quelle vitesse l'équipe les traite, ce que deviennent les appels d'offres,
-quel encours ils rapportent, et comment tout cela évolue sur dix ans.
+gestion d'actifs. Il répond en un écran à la question du dirigeant — *où en
+sont les appels d'offres ?* — puis laisse descendre, page après page, jusqu'au
+dossier individuel.
 
-Trois fichiers Python, neuf pages, un rapport HTML autonome.
+Trois fichiers Python, dix pages, un rapport HTML autonome.
+
+<!-- ÉTAT : début — généré par `python export.py --readme`, ne pas éditer -->
+
+## État du carnet au 16 septembre 2026
+
+> **Jeu de démonstration.** Les chiffres de cette page sont produits par le générateur livré avec le dépôt. Ils reproduisent la FORME d'une activité réelle — saisonnalité, délais, concentration de la collecte — mais aucun ne décrit une activité réelle, et aucun client nommé n'existe. Voir « Brancher vos données ».
+
+| Appels d'offres vivants | Encours en jeu | Taux de succès | Encours remporté |
+|---:|---:|---:|---:|
+| **13** | **569 M€** | **33,1 %** | **5 625 M€** |
+
+<sub>86 mandats remportés sur 260 dossiers tranchés. Les dossiers en attente de décision sont exclus du dénominateur.</sub>
+
+| Compartiment | Dossiers | Encours |
+|---|---:|---:|
+| En rédaction <sub>chez nous, réponse non partie</sub> | 6 | 265 M€ |
+| En attente de décision <sub>remis au client, non tranché</sub> | 7 | 304 M€ |
+| Gagnés <sub>mandat remporté</sub> | 86 | 5 625 M€ |
+| Perdus <sub>mandat non retenu</sub> | 174 | 7 537 M€ |
+| Sans suite <sub>abandonné avant décision</sub> | 15 | 853 M€ |
+
+### En attente de décision — 7
+
+| Dossier | | Attente |
+|---|---|---:|
+| Sovereign Reserve Authority | Singapour · Obligataire | 183 j |
+| Caja de Pensiones Ibérica | Espagne · Actions | 156 j |
+| Albion Wealth Partners | Royaume-Uni · Obligataire | 134 j |
+| Groupe Financier Bellecour | France · Obligataire | 125 j |
+| Banque Privée du Léman | Suisse · Obligataire | 55 j |
+| _… et 2 autres_ | | |
+
+### Gagnés — 86
+
+| Dossier | | Encours |
+|---|---|---:|
+| Stiftung Rheinland Vorsorge | Allemagne · Alternatif | 4 M€ |
+| Université de Genève — Dotation | Suisse · Monétaire | 88 M€ |
+| Conseil Actuariel Lutèce | France · Actifs réels | 73 M€ |
+| Pensioenfonds Rijnmond | Pays-Bas · Obligataire | 23 M€ |
+| Albion Wealth Partners | Royaume-Uni · Actifs réels | 184 M€ |
+| _… et 81 autres_ | | |
+
+### Perdus — 174
+
+| Dossier | | Encours |
+|---|---|---:|
+| Assurance Vie Méditerranée | France · Actifs réels | 7 M€ |
+| Assurance Vie Méditerranée | France · Obligataire | 31 M€ |
+| Albion Wealth Partners | Royaume-Uni · Monétaire | 19 M€ |
+| Banque Privée du Léman | Suisse · Actions | 25 M€ |
+| Plateforme Épargne Digitale | France · Obligataire | 70 M€ |
+| _… et 169 autres_ | | |
+
+Mix des demandes : **288** RFP · **387** RFI · **996** DDQ. Le rapport diffusé, lui, s'en tient aux deux familles de pilotage — RFP et due diligence.
+
+> Source : Données synthétiques (1 691 lignes, graine 20260914). 1 671 lignes exploitables sur 1 691. Bloc régénéré par `python export.py --readme`.
+
+<!-- ÉTAT : fin -->
 
 ---
 
@@ -20,13 +78,14 @@ streamlit run app.py
 L'application s'ouvre sur **http://localhost:8501**. Port occupé ?
 `streamlit run app.py --server.port 8502`. `Ctrl + C` arrête le serveur.
 
-Elle démarre sur un jeu de **données de démonstration** couvrant 2014 → aujourd'hui
-(~1 700 questionnaires). Rien à configurer pour la découvrir.
+Elle démarre sur un jeu de **données de démonstration** couvrant 2014 →
+aujourd'hui (~1 700 questionnaires). Rien à configurer pour la découvrir.
 
 ```bash
 python core.py                # contrôle la chaîne de bout en bout
-python export.py              # écrit rapport.html (thème institutionnel)
+python export.py              # écrit rapport.html
 python export.py --clair      # variante claire, pour l'impression
+python export.py --readme     # régénère l'état du carnet en tête de ce fichier
 ```
 
 ---
@@ -36,17 +95,18 @@ python export.py --clair      # variante claire, pour l'impression
 | Fichier | Rôle | Dépendance à Streamlit |
 |---|---|---|
 | `core.py` | Configuration, lecture Excel, normalisation, **couche métrique**, statistiques, thèmes, figures Plotly, moteur d'insights | **aucune** |
-| `app.py` | Interface : navigation, filtres globaux, drill-down, explorateur, export | oui |
-| `export.py` | Rapport HTML autonome, paginé | non |
-| `assets/` | Police Inter (OFL), lecteur Lottie (MIT), 4 animations | — |
+| `app.py` | Interface : accueil, navigation, filtres globaux, drill-down, explorateur, export | oui |
+| `export.py` | Rapport HTML autonome, et l'état du carnet écrit dans ce README | non |
+| `assets/` | Marque (`logo.svg`), police Inter (OFL), lecteur Lottie (MIT), 4 animations | — |
 
 `core.py` produit un objet `Analysis` — indicateurs, blocs d'analyse, constats —
 que `app.py` et `export.py` consomment **à l'identique**. Un chiffre affiché à
 l'écran est le même que dans le rapport, par construction.
 
 **Couche métrique.** Chaque indicateur est défini une fois, dans une fonction
-documentée (`taux_succes_rfp`, `aum_gagne`, `cadence_mensuelle`, `croissance`…).
-Deux graphiques ne peuvent pas compter la même chose différemment.
+documentée (`carnet`, `taux_succes_rfp`, `aum_gagne`, `cadence_mensuelle`,
+`croissance`…). Deux graphiques ne peuvent pas compter la même chose
+différemment, et le README ne peut pas dire autre chose que l'écran.
 
 **Ajouter une analyse** : écrire `_bloc_xxx(df, mensuel, stats)` qui renvoie un
 `Block`, puis l'inscrire dans `_CONSTRUCTEURS`. Elle apparaît automatiquement
@@ -55,11 +115,12 @@ signalé dans la page qualité ; il n'interrompt jamais l'écran.
 
 ---
 
-## Les neuf pages
+## Les dix pages
 
 | Page | Question à laquelle elle répond |
 |---|---|
-| **Vue d'ensemble** | Où en est l'activité, qu'est-ce qui demande une action aujourd'hui ? |
+| **Accueil** | Où en sont les appels d'offres aujourd'hui, et lesquels ? |
+| **Vue d'ensemble** | Où en est l'activité, qu'est-ce qui demande une action ? |
 | **Activité** | La charge augmente-t-elle ? À quelle vitesse la traite-t-on ? |
 | **Pipeline RFP** | Que deviennent les appels d'offres, et où gagne-t-on ? |
 | **Due diligence** | Quelles expertises et quels pays absorbent la charge ? |
@@ -68,6 +129,39 @@ signalé dans la page qualité ; il n'interrompt jamais l'écran.
 | **Insights** | Que faut-il retenir, et qu'est-ce qui explique les délais ? |
 | **Explorateur** | Du chiffre agrégé au dossier individuel. |
 | **Qualité & export** | D'où viennent les données, que valent-elles, comment les diffuser ? |
+
+### La page d'accueil
+
+Elle est faite pour être lue debout, en dix secondes, par quelqu'un qui n'ouvrira
+aucune autre page :
+
+- **quatre chiffres** — appels d'offres vivants, encours en jeu, taux de succès,
+  encours remporté ;
+- **le carnet en une ligne** — un ruban segmenté : en rédaction, en attente de
+  décision, gagnés, perdus, sans suite. Les cinq compartiments sont exclusifs et
+  couvrent la totalité des RFP ; leur somme vaut le nombre d'appels d'offres, et
+  `python core.py` le vérifie ;
+- **trois registres nommés** — *qui* attend une décision (avec l'ancienneté, en
+  rouge au-delà de quatre mois), *qui* a été gagné, *qui* a été perdu, chacun avec
+  son encours ;
+- **la liste à relancer**, avec le motif : délai cible dépassé, ou silence du
+  client ;
+- **le mix réel** — RFP, RFI, DDQ.
+
+Chaque ligne est cliquable : elle ouvre l'explorateur sur ce client, où un
+second clic ouvre la fiche du dossier.
+
+### RFI et DDQ : à l'écran, pas dans le rapport
+
+Le pilotage raisonne en **deux familles** — RFP d'un côté, toute la due diligence
+de l'autre — et c'est la seule lecture que porte le rapport diffusé. Le détail du
+type fin (RFP / RFI / DDQ) reste visible **à l'écran** : dans le mix de la page
+d'accueil, dans deux indicateurs de la page due diligence, et dans le bloc « RFI
+et DDQ : le détail de la charge ».
+
+Techniquement, un `Block` ou un `Kpi` porte un drapeau `hors_rapport` ;
+`export.py` les écarte. L'auto-test vérifie qu'il reste au moins un bloc d'écran
+et qu'aucun indicateur marqué ne part dans le rapport.
 
 ### Drill-down
 
@@ -80,14 +174,15 @@ Le produit ne laisse jamais dans une impasse analytique :
   pages sur cette expertise ;
 - **un clic sur une ligne de l'explorateur ouvre la fiche du dossier**, sans
   perdre les filtres ni la position dans la liste ;
-- **la page vit dans l'URL** (`?page=rfp`) : le lien est partageable et le
-  bouton « précédent » du navigateur fonctionne.
+- **l'URL porte l'état** — `?page=rfp`, et un lien peut même transporter un
+  filtre (`?page=explorateur&statut=Gagné`) ou une recherche (`&q=Bellecour`).
+  Les liens sont partageables, et le bouton « précédent » fonctionne.
 
 ### Filtres
 
-Une seule barre, au-dessus de tout ce qu'elle porte : période, puis les quatre
-dimensions de premier niveau, les autres derrière « Plus de filtres ». Les
-filtres actifs sont affichés en permanence sous le titre — on ne lit jamais un
+Une seule barre, sous le titre et au-dessus de tout ce qu'elle porte : période,
+puis les quatre dimensions de premier niveau, les autres derrière « Plus de
+filtres ». Les filtres actifs sont affichés en permanence — on ne lit jamais un
 chiffre sans savoir sur quoi il porte.
 
 ---
@@ -105,9 +200,9 @@ underscores sont ignorés, et `COLUMN_ALIASES` reconnaît les intitulés courant
 (`"Date de réception"`, `"Sub asset class"`, `"ESG %"`…).
 
 **Colonnes indispensables** : date de réception, type de demande, statut. Toutes
-les autres sont facultatives — si `Expertise` manque, la page due diligence
-perd son classement par expertise et conserve le reste. Rien ne casse, et la
-page « Qualité » dit précisément ce qui manque.
+les autres sont facultatives — si `Expertise` manque, la page due diligence perd
+son classement par expertise et conserve le reste. Rien ne casse, et la page
+« Qualité » dit précisément ce qui manque.
 
 **Vocabulaire métier** — paramétrable dans le même bloc :
 
@@ -122,21 +217,47 @@ page « Qualité » dit précisément ce qui manque.
 - `SLA_JOURS_OUVRES`, `HORIZONS_CROISSANCE`, `ESG_SEUIL_FORT`, `THEME_DEFAUT`.
 
 > Les données réelles ne doivent pas rejoindre le dépôt : `.gitignore` exclut
-> `*.xlsx`, `*.csv` et le rapport généré.
+> `*.xlsx`, `*.csv` et le rapport généré. Régénérer l'état de ce README sur des
+> données réelles y publierait des noms de clients : c'est une décision à
+> prendre, pas un automatisme.
+
+---
+
+## Identité de la maison
+
+Le bloc **`[BRANCHEMENT MARQUE]`**, juste en dessous, tient toute l'identité :
+nom, activité, fichier de logo, et trois couleurs — bleu de nuit, bleu profond,
+or.
+
+> **Ces trois couleurs sont une reconstruction, pas la charte.** Les sites de la
+> maison ne sont pas accessibles depuis l'environnement de développement : les
+> valeurs livrées reproduisent le couple bleu de nuit / or, elles ne sont pas
+> extraites du référentiel officiel. Les remplacer par celles de la charte prend
+> trente secondes, et n'a d'effet qu'à cet endroit.
+
+> **`assets/logo.svg` n'est pas le logo officiel.** C'est un repère géométrique
+> dessiné pour ce produit — les cinq flèches, tracées au compas. Déposer le SVG
+> de la charte sous ce nom exact suffit à le remplacer partout : barre latérale,
+> page d'accueil, couverture du rapport. Voir `assets/LOGO.txt`.
 
 ---
 
 ## Définitions qui engagent
 
 - **Famille** — RFP d'un côté, toute la due diligence de l'autre. C'est la
-  lecture du pôle ; le type fin reste disponible en filtre.
+  lecture du pôle ; le type fin reste disponible en filtre et à l'écran.
 - **Résultat** — n'existe **que** pour un appel d'offres. Une due diligence ne
   se gagne pas : son résultat est « sans objet », pas « perdu ».
+- **Carnet** — les cinq états d'un appel d'offres. « En rédaction » et « en
+  attente de décision » partagent le résultat « en attente » mais appellent deux
+  actions différentes : produire d'un côté, relancer de l'autre. Le carnet
+  distingue les deux ; c'est tout l'intérêt de la page d'accueil.
 - **Taux de succès** — gagnés / (gagnés + perdus). Les dossiers en attente de
   décision sont exclus du dénominateur ; les compter comme des échecs
   fabriquerait un effondrement sur les périodes récentes.
 - **Encours remporté** — encours des RFP gagnés, rattaché à l'année de
-  réception du dossier.
+  réception du dossier. **Encours en jeu** — celui des dossiers encore ouverts :
+  un pipeline, pas une collecte acquise.
 - **Délai de traitement** — jours **calendaires** entre réception et envoi,
   comme au comité. Le respect du délai cible se mesure, lui, en jours ouvrés.
 - **Cadence** — dossiers **terminés** par mois : la capacité de production de
@@ -146,7 +267,8 @@ page « Qualité » dit précisément ce qui manque.
   afficherait un effondrement qui n'existe pas.
 - **Limite de lecture** — les clients tranchent plusieurs mois après l'envoi.
   Sur une période récente, le taux de succès et l'encours remporté sont
-  mécaniquement sous-évalués. L'avertissement est affiché sous les indicateurs.
+  mécaniquement sous-évalués, l'encours en jeu surévalué. L'avertissement est
+  affiché sous les indicateurs.
 
 Les **insights** sont calculés, jamais rédigés d'avance : chaque phrase provient
 d'une fonction analytique, et disparaît si la donnée ne permet pas de
@@ -156,16 +278,25 @@ l'établir. Aucun chiffre n'est produit par un modèle de langage.
 
 ## Design
 
-**Trois thèmes** définis une seule fois dans `core.py` et partagés par l'écran
-et le rapport : *Institutionnel* (par défaut), *Sombre*, *Clair* pour
-l'impression. Le sélecteur est en bas de la barre latérale.
+**Quatre thèmes** définis une seule fois dans `core.py` et partagés par l'écran
+et le rapport : *maison* (sombre, par défaut), *Sombre neutre*,
+*Institutionnel*, *Clair* pour l'impression. Le sélecteur est en bas de la barre
+latérale.
+
+**Direction artistique du thème maison** : bleu de nuit, surfaces plates, filets
+d'un pixel qui dessinent la grille, angles courts (4 px), micro-libellés en
+capitales espacées, chiffres tabulaires larges. Aucune ombre, aucun dégradé,
+aucun halo — la hiérarchie tient au contraste typographique et au vide. L'or ne
+porte jamais une donnée : il marque la navigation active, la marque, et le seul
+chiffre qui compte vraiment, l'encours remporté.
 
 **Palette validée** sur sa propre surface : bande de clarté, plancher de chroma,
-séparation sous daltonisme et contraste — les huit teintes passent les
-contrôles. L'ordre des teintes est le mécanisme de sécurité, pas une
-préférence : ne pas permuter sans revalider. L'identité d'une série n'est jamais
-portée par la seule couleur (légende, libellés directs, tableau équivalent), et
-les couleurs d'état s'accompagnent toujours du libellé et de la valeur.
+séparation sous daltonisme et contraste — les huit teintes passent les contrôles
+sur le bleu de nuit comme sur l'ivoire. L'ordre des teintes est le mécanisme de
+sécurité, pas une préférence : ne pas permuter sans revalider. L'identité d'une
+série n'est jamais portée par la seule couleur (légende, libellés directs,
+tableau équivalent), et les couleurs d'état s'accompagnent toujours du libellé et
+de la valeur — y compris sur le ruban du carnet.
 
 **Choix de formes assumés** : pas de camembert à vingt parts pour la répartition
 par expertise — un classement en barres, queue regroupée dans « Autres ». Au-delà
@@ -173,35 +304,44 @@ de sept catégories, aucune part d'un disque n'est comparable à l'œil.
 
 **Typographie** : Inter variable (SIL OFL) embarquée en base64 — même rendu hors
 ligne et dans un rapport transmis par courriel. Chiffres tabulaires partout où
-des valeurs s'alignent.
+des valeurs s'alignent. Et pas un seul « dossier(s) » : les accords sont
+calculés (`core.pluriel`, `core.accord`).
 
-**Animations Lottie** jouées en local (lecteur `lottie_light`, MIT, servi depuis
-`assets/`, jamais un CDN) : identité dans la barre latérale, tracé de couverture
-du rapport, état de chargement, confirmation. Le mouvement sert un état ou un
-moment de lecture. `prefers-reduced-motion` coupe tout.
+**Mouvement** : le logo est un SVG inline, net à toutes les tailles et immobile —
+une marque qui se redessine à chaque rerun de Streamlit fatigue. Les animations
+Lottie (lecteur `lottie_light`, MIT, servi depuis `assets/`, jamais un CDN)
+restent là où un mouvement signifie quelque chose : l'attente pendant la
+génération du rapport, la confirmation ensuite, le tracé de couverture du
+rapport — où les cinq flèches se dessinent une fois, au chargement.
+`prefers-reduced-motion` coupe tout.
 
-Si `assets/` est absent, l'interface perd ses animations et sa police — jamais
-son contenu.
+Si `assets/` est absent, l'interface perd sa marque, ses animations et sa
+police — jamais son contenu.
 
 ---
 
 ## Rapport HTML
 
 Le bouton « Générer le rapport » (page *Qualité & export*) produit un fichier
-unique d'environ 4,7 Mo reprenant le périmètre filtré : couverture avec les
-chiffres clés, constats calculés, sept pages navigables (clic, flèches ← →,
-touches 0-7), les 24 analyses interactives, leurs tableaux et une annexe
+unique d'environ 5 Mo reprenant le périmètre filtré : couverture avec la marque
+et les chiffres clés, constats calculés, sept pages navigables (clic, flèches
+← →, touches 0-7), les analyses interactives, leurs tableaux et une annexe
 méthodologique. Plotly, Lottie, les animations et la police y sont embarqués :
 il s'ouvre d'un double-clic, sans Python, sans serveur, sans réseau.
+
+C'est le document **diffusé** : il parle le vocabulaire du comité — deux
+familles, pas de types fins.
 
 ---
 
 ## Données de démonstration
 
 Le jeu par défaut est **explicitement synthétique** — la source est libellée
-comme telle partout. Sa forme reproduit celle d'un pôle réel : due diligence
-multipliée par quatre en dix ans à effectif RFP constant, creux d'août, délais
-corrélés au volume de questions, collecte très concentrée sur quelques mandats.
+comme telle dans la barre latérale, sur la page qualité, dans l'annexe du
+rapport et en tête de ce fichier. Sa forme reproduit celle d'un pôle réel : due
+diligence multipliée par quatre en dix ans à effectif RFP constant, creux d'août,
+délais corrélés au volume de questions, collecte très concentrée sur quelques
+mandats. Aucun client nommé n'existe.
 
 Les volumes annuels sont paramétrés (`VOLUMES_ANNUELS`) de sorte que les trois
 indicateurs de croissance du produit tombent sur ceux que publie le pôle :

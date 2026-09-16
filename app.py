@@ -12,7 +12,9 @@ from __future__ import annotations
 import datetime as dt
 import inspect
 import json
+from html import escape
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -21,7 +23,7 @@ import streamlit.components.v1 as components
 import core
 
 st.set_page_config(
-    page_title="RFP Intelligence",
+    page_title=f"{core.MARQUE_PRODUIT} — {core.MARQUE_NOM}",
     page_icon="◆",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -45,6 +47,8 @@ SELECTION_DISPONIBLE = "on_select" in inspect.signature(st.plotly_chart).paramet
 # Architecture de l'information : chaque page répond à une question de pilotage.
 PAGES: list[tuple[str, str, str, str]] = [
     # (clé, libellé, groupe, sous-titre)
+    ("accueil", "Accueil", "Pilotage",
+     "Où en sont les appels d'offres, aujourd'hui."),
     ("synthese", "Vue d'ensemble", "Pilotage",
      "Où en est l'activité, et qu'est-ce qui demande votre attention."),
     ("activite", "Activité", "Opérations",
@@ -70,12 +74,13 @@ GROUPES = ["Pilotage", "Opérations", "Performance", "Intelligence", "Données"]
 # Indicateurs mis en avant par page — la couche métrique les produit tous, la
 # page choisit ceux qui répondent à sa question.
 KPIS_PAR_PAGE = {
+    "accueil": [],                 # la page d'accueil a son propre relevé
     "synthese": ["questionnaires", "dd", "rfp", "rfp_gagnes",
                  "aum", "succes", "delai_dd", "delai_rfp"],
     "activite": ["questionnaires", "dd", "rfp", "questions",
                  "delai_dd", "delai_rfp", "sla", "esg"],
     "rfp": ["rfp", "rfp_gagnes", "succes", "pipeline", "aum", "delai_rfp"],
-    "dd": ["dd", "delai_dd", "sla", "questions"],
+    "dd": ["dd", "rfi", "ddq", "delai_dd", "sla", "questions"],
     "aum": ["aum", "rfp_gagnes", "succes", "pipeline"],
     "esg": ["esg", "questionnaires", "dd", "rfp"],
     "insights": [],
@@ -87,33 +92,74 @@ KPIS_PAR_PAGE = {
 # =============================================================================
 #  THÈME — appliqué avant toute génération de style
 # =============================================================================
-THEMES_LISIBLES = {"institutionnel": "Institutionnel", "sombre": "Sombre",
-                   "clair": "Clair (impression)"}
+THEMES_LISIBLES = {"maison": f"{core.MARQUE_NOM} (sombre)", "sombre": "Sombre neutre",
+                   "institutionnel": "Institutionnel", "clair": "Clair (impression)"}
 
-_theme_demande = st.session_state.get("theme", core.THEME_DEFAUT)
+# L'apparence se transporte dans l'URL (`?theme=clair`) : un lien envoyé pour
+# impression n'oblige pas le destinataire à chercher le sélecteur.
+_theme_demande = (st.query_params.get("theme")
+                  or st.session_state.get("theme", core.THEME_DEFAUT))
 if _theme_demande not in core.THEMES:
     _theme_demande = core.THEME_DEFAUT
+st.session_state["theme"] = _theme_demande
 core.appliquer_theme(_theme_demande)
-EST_SOMBRE = _theme_demande == "sombre"
+EST_SOMBRE = _theme_demande in ("sombre", "maison")
 
 
-SOMBRE_CSS = """
-[data-testid="stSidebar"], .stSelectbox div[data-baseweb="select"] > div,
-.stMultiSelect div[data-baseweb="select"] > div, .stTextInput input,
-div[data-baseweb="popover"] div, [data-testid="stExpander"] details {
+# Le thème Streamlit (config.toml) est STATIQUE : il ne peut pas suivre le
+# sélecteur d'apparence. Ces règles repeignent les surfaces des widgets à partir
+# des variables du thème actif — elles s'appliquent donc dans tous les cas.
+WIDGETS_CSS = """
+/* Streamlit rend ses contrôles avec react-aria (ComboBox) dans les versions
+   récentes, avec baseweb dans les précédentes : on couvre les deux plutôt que
+   de parier sur la version installée. */
+[data-testid="stSidebar"],
+[class*="react-aria-ComboBox"] > div,
+div[data-baseweb="select"] > div,
+.stTextInput input, .stNumberInput input,
+[data-testid="stPopoverButton"], [data-testid="stPopoverBody"],
+div[data-baseweb="popover"] div, [class*="react-aria-Popover"],
+[class*="react-aria-ListBox"], [data-testid="stExpander"] details {
   background-color: var(--surface) !important; color: var(--ink) !important;
   border-color: var(--border) !important; }
-div[data-baseweb="select"] svg, div[data-baseweb="select"] span { color: var(--ink-2) !important; }
+
+/* Le texte des contrôles : valeur choisie, options du menu, libellé de bouton. */
+[class*="react-aria-ComboBox"] input, [class*="react-aria-ComboBox"] span,
+[class*="react-aria-ListBox"] *, [data-testid="stPopoverButton"] p,
+div[data-baseweb="select"] span { color: var(--ink) !important; }
+
+/* Chevrons et croix : encre secondaire, ils ne sont pas du contenu. */
+[class*="react-aria-ComboBox"] svg, [data-testid="stPopoverButton"] svg,
+div[data-baseweb="select"] svg { color: var(--ink-2) !important; fill: var(--ink-2) !important; }
+
+/* Une modalité retenue est un jeton d'accent atténué, pas un aplat de marque :
+   l'encre doit y rester lisible dans les quatre thèmes. */
+[data-testid="stMultiSelectTagsContainer"] > div,
+[data-testid="stMultiSelectTagsContainer"] > span {
+  background-color: color-mix(in srgb, var(--accent) 20%, transparent) !important;
+  color: var(--ink) !important; }
+
+/* Survol d'une option de menu. */
+[class*="react-aria-ListBox"] [data-focused],
+[class*="react-aria-ListBox"] [data-hovered],
+div[data-baseweb="popover"] li:hover { background-color: var(--elevation) !important; }
+
 [data-testid="stElementContainer"] .js-plotly-plot .bg { fill: transparent !important; }
 label, .stSelectbox label p, .stMultiSelect label p { color: var(--ink-2) !important; }
 """
 
 
 def feuille_de_style() -> str:
-    sombre_css = SOMBRE_CSS if EST_SOMBRE else ""
-    halo = ("radial-gradient(900px 520px at 82% -12%, color-mix(in srgb, var(--serie1) 11%, transparent), transparent 60%)"
-            if EST_SOMBRE else
-            "radial-gradient(1100px 600px at 88% -18%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 62%)")
+    # Le thème maison ne porte aucun halo : la sobriété est le sujet, et un
+    # dégradé posé sur un bleu de nuit de marque le salit.
+    if core.THEME == "maison":
+        halo = "none"
+    elif EST_SOMBRE:
+        halo = ("radial-gradient(900px 520px at 82% -12%, "
+                "color-mix(in srgb, var(--serie1) 11%, transparent), transparent 60%)")
+    else:
+        halo = ("radial-gradient(1100px 600px at 88% -18%, "
+                "color-mix(in srgb, var(--accent) 5%, transparent), transparent 62%)")
     return f"""
 <style>
 {core.police_css()}
@@ -123,6 +169,10 @@ def feuille_de_style() -> str:
   --grid:{core.GRID}; --border:{core.BORDER}; --serie1:{core.SERIES[0]};
   --serie2:{core.SERIES[1]}; --accent:{core.ACCENT}; --laiton:{core.ACCENT_2};
   --bon:{core.TEXTE_BON}; --mauvais:{core.TEXTE_MAUVAIS};
+  --rayon:{core.RAYON}; --sur-accent:{core.SUR_ACCENT};
+  --neutre:{core.INK_MUTED}; --attente:{core.SERIES[0]};
+  --gagne:{core.STATUS_GOOD}; --perdu:{core.STATUS_CRITICAL};
+  --sans-suite:{core.STATUS_SERIOUS};
 }}
 html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {{
   background: var(--plane); color: var(--ink); font-family: {core.FONT_STACK};
@@ -161,7 +211,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {{
 @media (max-width:1400px) {{ .kpis {{ grid-template-columns:repeat(3, minmax(0,1fr)); }} }}
 @media (max-width:1100px) {{ .kpis {{ grid-template-columns:repeat(2, minmax(0,1fr)); }} }}
 a.kpi, div.kpi {{ display:block; background:var(--surface); border:1px solid var(--border);
-  border-radius:10px; padding:13px 15px 11px; text-decoration:none; color:inherit;
+  border-radius:var(--rayon); padding:13px 15px 11px; text-decoration:none; color:inherit;
   transition:border-color .16s ease, transform .16s ease; height:100%; }}
 a.kpi:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparent);
                transform:translateY(-1px); }}
@@ -185,7 +235,7 @@ a.kpi:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparent);
 
 /* -------------------------------------------------------------- cartes ---- */
 div[data-testid="stVerticalBlockBorderWrapper"] {{
-  background:var(--surface); border:1px solid var(--border) !important; border-radius:12px;
+  background:var(--surface); border:1px solid var(--border) !important; border-radius:var(--rayon);
   transition:border-color .16s ease; }}
 [data-testid="stColumn"] > div,
 [data-testid="stColumn"] > div > [data-testid="stVerticalBlock"],
@@ -199,13 +249,13 @@ div[data-testid="stVerticalBlockBorderWrapper"] {{
 /* ------------------------------------------------------------- insights --- */
 .alerte {{ background:color-mix(in srgb, var(--mauvais) 8%, var(--surface));
            border:1px solid color-mix(in srgb, var(--mauvais) 28%, transparent);
-           border-left:3px solid var(--mauvais); border-radius:9px; padding:12px 15px;
+           border-left:3px solid var(--mauvais); border-radius:var(--rayon); padding:12px 15px;
            font-size:12.5px; color:var(--ink); line-height:1.5; }}
 .insights {{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px;
              margin-bottom:6px; }}
 @media (max-width:1240px) {{ .insights {{ grid-template-columns:repeat(2, minmax(0,1fr)); }} }}
 a.insight, div.insight {{ background:var(--surface); border:1px solid var(--border);
-            border-radius:10px; padding:15px 17px; height:100%; text-decoration:none;
+            border-radius:var(--rayon); padding:15px 17px; height:100%; text-decoration:none;
             color:inherit; display:flex; flex-direction:column;
             border-left:3px solid var(--serie1); transition:border-color .16s ease; }}
 a.insight:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparent);
@@ -221,12 +271,18 @@ a.insight:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparen
 /* -------------------------------------------------------- barre latérale -- */
 [data-testid="stSidebar"] {{ background:var(--surface); border-right:1px solid var(--border); }}
 [data-testid="stSidebar"] .block-container {{ padding-top:.9rem; }}
+/* Navigation dense : une liste de pages, pas un empilement de cartes. */
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{ gap:.22rem; }}
+[data-testid="stSidebar"] hr {{ margin:16px 0 12px; }}
+[data-testid="stSidebar"] [data-testid="stSelectbox"] {{ margin-top:2px; }}
+[data-testid="stSidebar"] .side-info {{ margin-top:14px; }}
 .marque__texte {{ font-size:12.5px; font-weight:640; letter-spacing:-.01em; line-height:1.2;
                   color:var(--ink); }}
 .marque__texte span {{ display:block; font-size:9px; letter-spacing:.15em; text-transform:uppercase;
   color:var(--muted); font-weight:600; margin-top:3px; }}
 .nav-groupe {{ font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
-               font-weight:700; margin:14px 0 2px; padding-left:2px; }}
+               font-weight:700; margin:20px 0 6px; padding-left:2px; line-height:1; }}
+[data-testid="stSidebar"] .nav-groupe:first-of-type {{ margin-top:14px; }}
 .side-info {{ font-size:10.5px; color:var(--muted); line-height:1.65; }}
 .side-info b {{ color:var(--ink-2); font-weight:600; }}
 
@@ -251,18 +307,127 @@ a.insight:hover {{ border-color:color-mix(in srgb, var(--accent) 45%, transparen
   font-size:12.5px; font-weight:600; border:1px solid var(--border);
   background:var(--elevation); color:var(--ink); }}
 .block-container .stButton button[kind="primary"] {{ background:var(--accent);
-  border-color:var(--accent); color:#fff; }}
+  border-color:var(--accent); color:var(--sur-accent); }}
 [data-testid="stAlert"], [data-testid="stAlertContainer"] {{
   background:color-mix(in srgb, var(--ink) 5%, transparent) !important;
-  border:1px solid var(--border); border-radius:9px; color:var(--ink-2) !important; }}
+  border:1px solid var(--border); border-radius:var(--rayon); color:var(--ink-2) !important; }}
 [data-testid="stAlert"] p, [data-testid="stAlertContainer"] p {{
   font-size:12px !important; color:var(--ink-2) !important; }}
-[data-testid="stDataFrame"] {{ border:1px solid var(--border); border-radius:9px; }}
+[data-testid="stDataFrame"] {{ border:1px solid var(--border); border-radius:var(--rayon); }}
 [data-testid="stMetricValue"] {{ font-variant-numeric:tabular-nums; }}
 #MainMenu, footer, [data-testid="stAppDeployButton"] {{ display:none; }}
-/* Le thème sombre repeint les surfaces des widgets, que le thème Streamlit
-   (statique, défini dans config.toml) ne peut pas suivre à l'exécution. */
-{sombre_css}
+{WIDGETS_CSS}
+
+/* ======================================================= page d'accueil ====
+   Direction : surfaces plates, filets d'un pixel qui dessinent la grille,
+   micro-libellés en capitales espacées, chiffres tabulaires larges. Aucune
+   ombre, aucun dégradé, aucun angle mou : la hiérarchie tient au contraste
+   typographique et au vide, pas à la décoration. */
+.marque {{ display:flex; align-items:center; gap:11px; padding:2px 0 10px; }}
+.marque__logo {{ width:34px; height:34px; flex:none; color:var(--laiton); }}
+.marque__logo svg {{ width:100%; height:100%; display:block; }}
+
+.hero {{ display:flex; align-items:center; gap:22px; padding:2px 0 22px;
+         border-bottom:1px solid var(--border); margin-bottom:18px; }}
+.hero__logo {{ width:56px; height:56px; flex:none; color:var(--laiton); }}
+.hero__logo svg {{ width:100%; height:100%; display:block; }}
+.hero__maison {{ font-size:10px; letter-spacing:.22em; text-transform:uppercase;
+                 color:var(--laiton); font-weight:700; }}
+.hero__titre {{ font-size:31px; font-weight:600; letter-spacing:-.032em; line-height:1.08;
+                margin:9px 0 6px; color:var(--ink); }}
+.hero__sous {{ font-size:12.5px; color:var(--ink-2); max-width:80ch; }}
+.hero__meta {{ margin-left:auto; text-align:right; font-size:11px; color:var(--muted);
+               line-height:1.85; white-space:nowrap; }}
+.hero__meta b {{ color:var(--ink-2); font-weight:600; font-variant-numeric:tabular-nums; }}
+
+/* Relevé : une seule surface, des filets pour séparer — pas quatre cartes. */
+.releve {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); background:var(--surface);
+           border:1px solid var(--border); border-radius:var(--rayon); overflow:hidden; }}
+@media (max-width:1100px) {{ .releve {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
+.releve > div {{ padding:17px 20px 16px; border-left:1px solid var(--border); }}
+.releve > div:first-child {{ border-left:0; }}
+.releve__label {{ font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
+                  color:var(--muted); font-weight:700; }}
+.releve__valeur {{ font-size:29px; font-weight:600; letter-spacing:-.03em; line-height:1;
+                   margin-top:11px; font-variant-numeric:tabular-nums; color:var(--ink); }}
+.releve__valeur em {{ font-style:normal; font-size:16px; color:var(--muted);
+                      letter-spacing:-.01em; margin-left:3px; }}
+.releve__valeur--or {{ color:var(--laiton); }}
+.releve__detail {{ font-size:10.5px; color:var(--muted); margin-top:9px; line-height:1.45; }}
+
+/* Le ruban : tout le carnet d'appels d'offres sur une ligne. */
+.ruban {{ display:flex; gap:2px; height:9px; margin-top:22px; }}
+.ruban i {{ display:block; border-radius:1px; }}
+.ruban-legende {{ display:flex; flex-wrap:wrap; gap:7px 26px; margin-top:13px; }}
+.ruban-legende div {{ display:flex; align-items:center; gap:8px; font-size:11.5px; }}
+.ruban-legende i {{ width:8px; height:8px; border-radius:2px; flex:none; }}
+.ruban-legende em {{ font-style:normal; font-weight:650; color:var(--ink);
+                     font-variant-numeric:tabular-nums; }}
+.ruban-legende span {{ color:var(--muted); }}
+
+/* Registres : qui est en attente, qui est gagné, qui est perdu. */
+.registres {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px;
+              margin-top:26px; }}
+@media (max-width:1150px) {{ .registres {{ grid-template-columns:1fr; }} }}
+.registre {{ background:var(--surface); border:1px solid var(--border);
+             border-radius:var(--rayon); display:flex; flex-direction:column; overflow:hidden; }}
+.registre__tete {{ display:flex; align-items:center; gap:9px; padding:13px 16px 12px;
+                   border-bottom:1px solid var(--border); }}
+.registre__pastille {{ width:8px; height:8px; border-radius:2px; flex:none; }}
+.registre__titre {{ font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
+                    font-weight:700; color:var(--ink-2); }}
+.registre__n {{ margin-left:auto; font-size:12px; font-weight:650; color:var(--ink);
+                font-variant-numeric:tabular-nums; }}
+.registre__colonnes {{ display:flex; justify-content:space-between; padding:8px 16px 7px;
+  font-size:9px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+  font-weight:650; border-bottom:1px solid
+  color-mix(in srgb, var(--border) 55%, transparent); }}
+.registre__colonnes + a.ligne {{ border-top:0; }}
+a.ligne {{ display:flex; align-items:flex-start; gap:12px; padding:9px 16px;
+           text-decoration:none; color:inherit;
+           border-top:1px solid color-mix(in srgb, var(--border) 55%, transparent);
+           transition:background .14s ease; }}
+.registre a.ligne:first-of-type {{ border-top:0; }}
+a.ligne:hover {{ background:var(--elevation); }}
+.ligne__nom {{ display:flex; flex-direction:column; gap:3px; min-width:0; flex:1; }}
+.ligne__nom b {{ font-size:12.5px; font-weight:560; color:var(--ink); overflow:hidden;
+                 text-overflow:ellipsis; white-space:nowrap; }}
+.ligne__meta {{ font-size:10.5px; color:var(--muted); overflow:hidden;
+                text-overflow:ellipsis; white-space:nowrap; }}
+.ligne__val {{ font-size:12px; font-variant-numeric:tabular-nums; color:var(--ink-2);
+               white-space:nowrap; text-align:right; padding-top:1px; }}
+.ligne__val--alerte {{ color:var(--mauvais); font-weight:650; }}
+.ligne__val em {{ font-style:normal; display:block; font-size:10.5px; color:var(--muted);
+                  margin-top:3px; }}
+.registre__pied {{ margin-top:auto; padding:11px 16px; border-top:1px solid var(--border); }}
+.registre__pied a {{ font-size:11px; font-weight:620; color:var(--accent);
+                     text-decoration:none; }}
+.registre__pied a:hover {{ text-decoration:underline; }}
+.registre__vide {{ padding:22px 16px; font-size:12px; color:var(--muted); line-height:1.5; }}
+.registre--large {{ margin-top:12px; }}
+.registre--large .lignes {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }}
+@media (max-width:1150px) {{ .registre--large .lignes {{ grid-template-columns:1fr; }} }}
+.registre--large .lignes > a.ligne:nth-child(2) {{ border-top:0; }}
+.registre--large .lignes > a.ligne:nth-child(odd) {{ border-right:1px solid
+                          color-mix(in srgb, var(--border) 55%, transparent); }}
+
+/* Bande due diligence : le détail RFI / DDQ, à l'écran seulement. */
+.bande {{ background:var(--surface); border:1px solid var(--border);
+          border-radius:var(--rayon); padding:16px 20px 18px; margin-top:26px; }}
+.bande__tete {{ display:flex; align-items:baseline; gap:12px; margin-bottom:15px; }}
+.bande__titre {{ font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
+                 font-weight:700; color:var(--ink-2); }}
+.bande__note {{ margin-left:auto; font-size:10.5px; color:var(--muted); }}
+.bande__ligne {{ display:grid; grid-template-columns:120px 1fr 92px; align-items:center;
+                 gap:14px; padding:6px 0; }}
+.bande__nom {{ font-size:12.5px; color:var(--ink); }}
+.bande__piste {{ height:8px; background:color-mix(in srgb, var(--ink) 7%, transparent);
+                 border-radius:2px; overflow:hidden; }}
+.bande__piste i {{ display:block; height:100%; border-radius:2px; }}
+.bande__val {{ font-size:12px; text-align:right; font-variant-numeric:tabular-nums;
+               color:var(--ink-2); }}
+.bande__val em {{ font-style:normal; color:var(--muted); font-size:10.5px; margin-left:6px; }}
+
 @media (prefers-reduced-motion: reduce) {{
   *, *::before, *::after {{ transition:none !important; animation:none !important; }}
 }}
@@ -297,6 +462,18 @@ def sparkline(valeurs: list[float], largeur: int = 96, hauteur: int = 24) -> str
             f'<polyline points="{trace}" fill="none" stroke="{core.SERIES[0]}" '
             f'stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity=".75"/>'
             f'<circle cx="{fin_x:.1f}" cy="{fin_y:.1f}" r="2.4" fill="{core.SERIES[0]}"/></svg>')
+
+
+@st.cache_data(show_spinner=False)
+def _logo() -> str:
+    return core.logo_svg()
+
+
+def marque_html(classe: str) -> str:
+    """Le logo de la maison, inline. Vide si `assets/logo.svg` est absent :
+    l'écran perd la marque, jamais son contenu."""
+    svg = _logo()
+    return f"<div class='{classe}'>{svg}</div>" if svg else ""
 
 
 def carte_kpi(kpi: core.Kpi) -> str:
@@ -398,9 +575,9 @@ PERIODES = {
 #  ÉTAT — page dans l'URL, filtres en session
 # =============================================================================
 def page_courante() -> str:
-    demandee = st.query_params.get("page", st.session_state.get("page", "synthese"))
+    demandee = st.query_params.get("page", st.session_state.get("page", "accueil"))
     if demandee not in LIBELLES_PAGES:
-        demandee = "synthese"
+        demandee = "accueil"
     st.session_state["page"] = demandee
     return demandee
 
@@ -454,7 +631,35 @@ def _reinitialiser_filtres() -> None:
     st.session_state["generation"] = st.session_state.get("generation", 0) + 1
 
 
+def _etat_depuis_url() -> None:
+    """Un lien peut porter un filtre ou une recherche :
+    `?page=explorateur&statut=Gagné`. C'est ce qui rend cliquable chaque ligne
+    de la page d'accueil, et chaque lien partageable.
+
+    Les paramètres sont consommés une seule fois — signature mémorisée — puis
+    retirés de l'URL : rien ne se rejoue, et retirer un filtre à la main ne le
+    voit pas revenir au rerun suivant.
+    """
+    portes = {c: st.query_params[c] for c in core.DIMENSIONS if st.query_params.get(c)}
+    recherche = st.query_params.get("q")
+    if not portes and recherche is None:
+        return
+    signature = (tuple(sorted(portes.items())), recherche)
+    if st.session_state.get("_url_lue") == signature:
+        return
+    st.session_state["_url_lue"] = signature
+    for champ, valeur in portes.items():
+        ajouter_filtre(champ, valeur)
+        del st.query_params[champ]
+    if recherche is not None:
+        # Écrit AVANT l'instanciation du champ de recherche : Streamlit
+        # interdirait l'inverse.
+        st.session_state["recherche"] = recherche
+        del st.query_params["q"]
+
+
 PAGE = page_courante()
+_etat_depuis_url()
 
 
 # =============================================================================
@@ -462,12 +667,15 @@ PAGE = page_courante()
 # =============================================================================
 def barre_laterale() -> None:
     with st.sidebar:
-        colonnes = st.columns([1, 3], gap="small")
-        with colonnes[0]:
-            animation("marque", 42)
-        with colonnes[1]:
-            st.markdown("<div class='marque__texte'>RFP Intelligence"
-                        "<span>Asset Management</span></div>", unsafe_allow_html=True)
+        # Le logo est un SVG inline plutôt qu'une animation en iframe : net à
+        # toutes les tailles, sans cadre parasite, et il ne se rejoue pas à
+        # chaque rerun. Le mouvement reste là où il signifie quelque chose —
+        # l'attente pendant la génération du rapport, la confirmation ensuite.
+        st.markdown(
+            f"<div class='marque'>{marque_html('marque__logo')}"
+            f"<div class='marque__texte'>{escape(core.MARQUE_NOM)}"
+            f"<span>{escape(core.MARQUE_PRODUIT)}</span></div></div>",
+            unsafe_allow_html=True)
 
         for groupe in GROUPES:
             pages = [p for p in PAGES if p[2] == groupe]
@@ -574,6 +782,9 @@ def chips_filtres(filtres: core.Filters) -> None:
     return actifs
 
 
+# L'en-tête est réservé AVANT la barre de filtres, mais rempli après : il a
+# besoin du décompte de la sélection, et il doit malgré tout ouvrir la page.
+zone_entete = st.container()
 filtres = barre_filtres()
 df = core.filter_data(df_complet, filtres)
 df_precedent = core.filter_data(df_complet, filtres.periode_precedente())
@@ -599,21 +810,47 @@ analyse = core.build_analysis(df, filtres, rapport, df_precedent,
 #  EN-TÊTE DE PAGE
 # =============================================================================
 _, titre_page, groupe_page, sous_titre = next(p for p in PAGES if p[0] == PAGE)
-st.markdown(
-    f"""
-    <div class="entete">
-      <div>
-        <div class="entete__fil">{groupe_page}</div>
-        <div class="entete__titre">{titre_page}</div>
-        <div class="entete__sous">{sous_titre}</div>
-      </div>
-      <div class="entete__meta">
-        <b>{core.fmt_int(len(df))}</b> questionnaires dans la sélection<br>
-        {analyse.periode}<br>
-        Données arrêtées au {core.fmt_date(DATE_MAX)}
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+with zone_entete:
+    if PAGE == "accueil":
+        # La page d'accueil porte la marque : c'est le premier écran ouvert le
+        # matin, il doit dire de qui il parle et à quelle date il est arrêté.
+        st.markdown(
+            f"""
+            <div class="hero">
+              {marque_html("hero__logo")}
+              <div>
+                <div class="hero__maison">{escape(core.MARQUE_NOM)} &middot;
+                  {escape(core.MARQUE_ACTIVITE)}</div>
+                <div class="hero__titre">État du carnet au
+                  {core.fmt_date_longue(DATE_MAX)}</div>
+                <div class="hero__sous">Les appels d'offres en attente de décision, ceux
+                  que nous avons remportés, ceux que nous avons perdus — sur le périmètre
+                  sélectionné ci-dessous.</div>
+              </div>
+              <div class="hero__meta">
+                <b>{core.fmt_int(len(df))}</b> questionnaires dans la sélection<br>
+                {analyse.periode}<br>
+                Écran du {core.fmt_date(dt.date.today())}
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"""
+            <div class="entete">
+              <div>
+                <div class="entete__fil">{groupe_page}</div>
+                <div class="entete__titre">{titre_page}</div>
+                <div class="entete__sous">{sous_titre}</div>
+              </div>
+              <div class="entete__meta">
+                <b>{core.fmt_int(len(df))}</b> questionnaires dans la sélection<br>
+                {analyse.periode}<br>
+                Données arrêtées au {core.fmt_date(DATE_MAX)}
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
 n_filtres = chips_filtres(filtres)
 
 if analyse.vide:
@@ -639,13 +876,15 @@ def afficher_bloc(bloc: core.Block) -> None:
                 bloc.figure, theme=None, config=core.PLOT_CONFIG, key=f"fig_{bloc.cle}",
                 on_select="rerun", selection_mode="points", **KW_PLOT)
             _traiter_clic(bloc, evenement)
-            st.markdown(f"<div class='carte__clic'>Cliquez une barre pour filtrer "
-                        f"l'ensemble du tableau de bord sur cette "
-                        f"{core.DIMENSIONS.get(bloc.dimension, bloc.dimension).lower()}.</div>",
+            # Formulation sans accord à deviner : « cette type de demande »
+            # serait la faute que tout le monde remarque.
+            st.markdown(f"<div class='carte__clic'>Cliquez une barre : tout le tableau "
+                        f"de bord se recalcule sur cette modalité de « "
+                        f"{core.DIMENSIONS.get(bloc.dimension, bloc.dimension).lower()} ».</div>",
                         unsafe_allow_html=True)
         else:
             st.plotly_chart(bloc.figure, theme=None, config=core.PLOT_CONFIG, **KW_PLOT)
-        with st.expander(f"Voir les données ({len(bloc.tableau)} ligne(s))"):
+        with st.expander(f"Voir les données ({core.pluriel(len(bloc.tableau), 'ligne')})"):
             st.dataframe(bloc.tableau, hide_index=True, **KW_TABLE)
         if bloc.note:
             st.markdown(f"<div class='carte__note'>{bloc.note}</div>", unsafe_allow_html=True)
@@ -712,6 +951,231 @@ def selecteur_granularite() -> None:
 # =============================================================================
 #  PAGES
 # =============================================================================
+# --- Accueil ------------------------------------------------------------------
+# Le premier écran répond à une seule question : où en sommes-nous ? Un relevé
+# de quatre chiffres, le carnet d'appels d'offres en une ligne, puis les trois
+# listes nommées — en attente, gagnés, perdus. Aucun chiffre n'est calculé ici :
+# tout vient de la couche métrique de core.py.
+COULEURS_COMPARTIMENT = {
+    "en_cours": "--neutre", "en_attente": "--attente", "gagnes": "--gagne",
+    "perdus": "--perdu", "sans_suite": "--sans-suite",
+}
+JOURS_ALERTE = 120          # au-delà, une décision qui tarde devient une relance
+
+
+def _pluriel(n: int, mot: str, pluriel: str | None = None) -> str:
+    """« 1 dossier », « 7 dossiers » — un produit qui écrit « dossier(s) » se lit
+    comme un formulaire."""
+    return f"{core.fmt_int(n)} {mot if abs(n) < 2 else (pluriel or mot + 's')}"
+
+
+def _lien(page: str, **parametres: str) -> str:
+    """URL interne portant un filtre : c'est ce que consomme `_etat_depuis_url`."""
+    suite = "".join(f"&{c}={quote(str(v))}" for c, v in parametres.items())
+    return f"?page={page}{suite}"
+
+
+def _meta(ligne: pd.Series, *champs: str) -> str:
+    valeurs = [str(ligne[c]) for c in champs
+               if c in ligne.index and pd.notna(ligne[c])
+               and str(ligne[c]) != core.VALEUR_INCONNUE]
+    return escape(" · ".join(valeurs))
+
+
+def _ligne_dossier(ligne: pd.Series, valeur: str, appui: str = "",
+                   alerte: bool = False, meta: str = "") -> str:
+    """Une ligne de registre : le dossier, ce qu'il pèse, et le clic qui ouvre
+    sa fiche dans l'explorateur."""
+    client = str(ligne.get("client") or "Client non renseigné")
+    classe = " ligne__val--alerte" if alerte else ""
+    appui_html = f"<em>{escape(appui)}</em>" if appui else ""
+    return (f"<a class='ligne' href='{_lien('explorateur', q=client)}' target='_self'>"
+            f"<span class='ligne__nom'><b>{escape(client)}</b>"
+            f"<span class='ligne__meta'>{meta}</span></span>"
+            f"<span class='ligne__val{classe}'>{escape(valeur)}{appui_html}</span></a>")
+
+
+def _registre(cle: str, titre: str, n: int, lignes: list[str], pied: str,
+              vide: str, colonne: str = "") -> str:
+    """Un compartiment du carnet : sa pastille, son effectif, ses dossiers, et
+    la porte vers la liste complète."""
+    corps = ("".join(lignes) if lignes
+             else f"<div class='registre__vide'>{escape(vide)}</div>")
+    pastille = (f"<i class='registre__pastille' "
+                f"style='background:var({COULEURS_COMPARTIMENT[cle]})'></i>")
+    # La colonne de droite change de sens d'un registre à l'autre : elle porte
+    # son intitulé plutôt que de laisser deviner ce que « 88 M€ » signifie.
+    entete = (f"<div class='registre__colonnes'><span>Dossier</span>"
+              f"<span>{escape(colonne)}</span></div>" if colonne and lignes else "")
+    return (f"<div class='registre'><div class='registre__tete'>{pastille}"
+            f"<span class='registre__titre'>{escape(titre)}</span>"
+            f"<span class='registre__n'>{core.fmt_int(n)}</span></div>{entete}{corps}"
+            f"<div class='registre__pied'>{pied}</div></div>")
+
+
+def _releve(etat: core.Carnet) -> None:
+    taux, gagnes, tranches, ic = core.taux_succes_rfp(df)
+    remporte, en_jeu = core.aum_gagne(df), core.aum_en_jeu(df)
+    cases = [
+        ("Appels d'offres vivants", core.fmt_int(etat.vivants), "",
+         f"{core.fmt_int(etat.n('en_cours'))} en rédaction · "
+         f"{core.fmt_int(etat.n('en_attente'))} remis, décision attendue"),
+        ("Encours en jeu", core.fmt_dec(en_jeu, 0, "M€"), "",
+         f"sur {_pluriel(etat.vivants, 'dossier')} non tranché"
+         + ("s" if etat.vivants > 1 else "")),
+        ("Taux de succès", core.fmt_pct(taux, 1), "",
+         f"{core.fmt_int(gagnes)} gagnés sur {core.fmt_int(tranches)} tranchés · "
+         f"IC 95 % {core.fmt_pct(ic[0], 0)}–{core.fmt_pct(ic[1], 0)}"),
+        ("Encours remporté", core.fmt_dec(remporte, 0, "M€"), " releve__valeur--or",
+         (f"ticket moyen {core.fmt_dec(remporte / gagnes, 0, 'M€')}" if gagnes
+          else "aucun mandat remporté sur la période")),
+    ]
+    st.markdown("<div class='releve'>" + "".join(
+        f"<div><div class='releve__label'>{escape(l)}</div>"
+        f"<div class='releve__valeur{classe}'>{escape(v)}</div>"
+        f"<div class='releve__detail'>{escape(d)}</div></div>"
+        for l, v, classe, d in cases) + "</div>", unsafe_allow_html=True)
+
+
+def _ruban(etat: core.Carnet) -> None:
+    """Tout le carnet sur une ligne. Chaque segment porte son libellé et son
+    effectif juste dessous : l'identité ne repose jamais sur la seule couleur."""
+    if not etat.total:
+        return
+    segments = "".join(
+        f"<i style='flex:{etat.n(cle)};background:var({COULEURS_COMPARTIMENT[cle]})'></i>"
+        for cle, _, _ in core.COMPARTIMENTS if etat.n(cle))
+    legende = "".join(
+        f"<div><i style='background:var({COULEURS_COMPARTIMENT[cle]})'></i>"
+        f"<em>{core.fmt_int(etat.n(cle))}</em>&nbsp;<span>{escape(libelle.lower())}"
+        f"{'' if etat.n(cle) else ' — aucun'}</span></div>"
+        for cle, libelle, _ in core.COMPARTIMENTS)
+    st.markdown(f"<div class='ruban'>{segments}</div>"
+                f"<div class='ruban-legende'>{legende}</div>", unsafe_allow_html=True)
+
+
+def _registres(etat: core.Carnet) -> None:
+    attente, gagnes, perdus = etat.en_attente, etat.gagnes, etat.perdus
+
+    lignes_attente = [
+        _ligne_dossier(
+            l, f"{core.fmt_int(l['jours_attente'])} j" if pd.notna(l["jours_attente"]) else "—",
+            "d'attente", alerte=pd.notna(l["jours_attente"]) and l["jours_attente"] > JOURS_ALERTE,
+            meta=_meta(l, "pays", "classe_actifs"))
+        for _, l in attente.head(6).iterrows()]
+
+    def _montant(ligne: pd.Series) -> str:
+        montant = ligne.get("montant_potentiel")
+        return core.fmt_dec(montant, 0, "M€") if pd.notna(montant) else "—"
+
+    lignes_gagnes = [
+        _ligne_dossier(l, _montant(l), core.fmt_date(l.get("date_envoi")),
+                       meta=_meta(l, "pays", "classe_actifs"))
+        for _, l in gagnes.head(6).iterrows()]
+    lignes_perdus = [
+        _ligne_dossier(l, _montant(l), core.fmt_date(l.get("date_envoi")),
+                       meta=_meta(l, "pays", "classe_actifs"))
+        for _, l in perdus.head(6).iterrows()]
+
+    def _pied(cle_statut: str, n: int, mot: str) -> str:
+        if not n:
+            return "<span class='registre__vide' style='padding:0'>—</span>"
+        quantite = "le" if n == 1 else f"les {core.fmt_int(n)}"
+        return (f"<a href='{_lien('explorateur', statut=cle_statut)}' target='_self'>"
+                f"Voir {quantite} {mot if n == 1 else mot + 's'} →</a>")
+
+    st.markdown("<div class='registres'>" + "".join([
+        _registre("en_attente", "En attente de décision", len(attente), lignes_attente,
+                  _pied(core.STATUT_ENVOYE, len(attente), "dossier"),
+                  "Aucun appel d'offres remis n'attend de décision sur cette sélection.",
+                  colonne="Attente"),
+        _registre("gagnes", "Gagnés", len(gagnes), lignes_gagnes,
+                  _pied(core.STATUT_GAGNE, len(gagnes), "mandat"),
+                  "Aucun mandat remporté sur cette sélection.",
+                  colonne="Encours · décision"),
+        _registre("perdus", "Perdus", len(perdus), lignes_perdus,
+                  _pied(core.STATUT_PERDU, len(perdus), "dossier"),
+                  "Aucun appel d'offres perdu sur cette sélection.",
+                  colonne="Encours · décision"),
+    ]) + "</div>", unsafe_allow_html=True)
+
+    st.markdown(f"<div class='note-lecture'>{core.NOTE_CENSURE}</div>",
+                unsafe_allow_html=True)
+
+
+def _relances(etat: core.Carnet) -> None:
+    urgents = etat.a_relancer
+    if urgents.empty:
+        return
+    lignes = []
+    for _, l in urgents.head(6).iterrows():
+        if bool(l.get("en_retard")):
+            motif, valeur = "délai cible dépassé", f"{core.fmt_int(l.get('anciennete_ouvree'))} j"
+        else:
+            motif, valeur = "sans réponse du client", f"{core.fmt_int(l.get('jours_attente'))} j"
+        lignes.append(_ligne_dossier(l, valeur, motif, alerte=True,
+                                     meta=_meta(l, "pays", "classe_actifs", "analyste")))
+    montant = float(urgents["montant_potentiel"].sum(skipna=True))
+    detail = (f" · {core.fmt_dec(montant, 0, 'M€')} d'encours concernés" if montant else "")
+    st.markdown(
+        "<div class='registre registre--large'><div class='registre__tete'>"
+        "<i class='registre__pastille' style='background:var(--mauvais)'></i>"
+        "<span class='registre__titre'>À relancer</span>"
+        f"<span class='registre__n'>{core.fmt_int(len(urgents))}</span></div>"
+        f"<div class='lignes'>{''.join(lignes)}</div>"
+        f"<div class='registre__pied'><a href='{_lien('explorateur')}' target='_self'>"
+        f"Ouvrir la liste complète dans l'explorateur →</a>"
+        f"<span class='ligne__meta' style='display:inline;margin-left:10px'>"
+        f"délai cible dépassé, ou décision attendue depuis plus de "
+        f"{JOURS_ALERTE} jours{escape(detail)}</span></div></div>",
+        unsafe_allow_html=True)
+
+
+def _bande_types() -> None:
+    """Le mix réel — RFP, RFI, DDQ. Détail d'écran : le rapport diffusé s'en
+    tient aux deux familles de pilotage, et le dit."""
+    volumes = core.repartition_type(df)
+    if volumes.empty:
+        return
+    total = float(volumes.sum())
+    lignes = []
+    for type_, n in volumes.items():
+        couleur = core.TYPE_COLORS.get(type_, core.SERIES[0])
+        part = n / total if total else 0.0
+        lignes.append(
+            f"<div class='bande__ligne'><div class='bande__nom'>{escape(str(type_))}</div>"
+            f"<div class='bande__piste'><i style='width:{part * 100:.1f}%;"
+            f"background:{couleur}'></i></div>"
+            f"<div class='bande__val'>{core.fmt_int(n)}"
+            f"<em>{core.fmt_pct(part, 0)}</em></div></div>")
+    st.markdown(
+        "<div class='bande'><div class='bande__tete'>"
+        "<span class='bande__titre'>Le mix réel</span>"
+        "<span class='bande__note'>détail d'écran — le rapport diffusé s'en tient "
+        "aux deux familles, RFP et due diligence</span></div>"
+        + "".join(lignes) + "</div>", unsafe_allow_html=True)
+
+
+def page_accueil() -> None:
+    etat = core.carnet(df)
+    _releve(etat)
+    _ruban(etat)
+    _registres(etat)
+    _relances(etat)
+    _bande_types()
+
+    flux = next((b for b in analyse.blocs if b.cle == "flux_famille"), None)
+    if flux is not None:
+        st.markdown("<div class='nav-groupe' style='margin-top:26px'>Ce qui arrive</div>",
+                    unsafe_allow_html=True)
+        afficher_bloc(flux)
+
+    if analyse.insights:
+        st.markdown("<div class='nav-groupe' style='margin-top:22px'>Constats</div>",
+                    unsafe_allow_html=True)
+        cartes_insights(analyse.insights[:3])
+
+
 def page_synthese() -> None:
     bandeau_kpis(analyse, KPIS_PAR_PAGE["synthese"])
     st.markdown(f"<div class='note-lecture'>{core.NOTE_CENSURE}</div>",
@@ -725,9 +1189,9 @@ def page_synthese() -> None:
         with gauche:
             montant = float(urgents["montant_potentiel"].sum(skipna=True))
             st.markdown(
-                f"<div class='alerte'><b>{core.fmt_int(len(urgents))} dossier(s) demandent "
-                f"une relance</b> — délai cible dépassé ou décision attendue depuis plus de "
-                f"quatre mois"
+                f"<div class='alerte'><b>{core.pluriel(len(urgents), 'dossier')} "
+                f"{'demande' if len(urgents) < 2 else 'demandent'} une relance</b> — délai "
+                f"cible dépassé ou décision attendue depuis plus de quatre mois"
                 + (f", {core.fmt_dec(montant, 0, 'M€')} d'encours concernés." if montant else ".")
                 + "</div>", unsafe_allow_html=True)
         with droite:
@@ -870,7 +1334,7 @@ def page_explorateur() -> None:
         elif interne in ("montant_potentiel", "delai_calendaire", "nb_questions"):
             config[libelle] = st.column_config.NumberColumn(libelle, format="%d")
 
-    st.caption(f"{core.fmt_int(len(table))} dossier(s) · cliquez une ligne pour ouvrir "
+    st.caption(f"{core.pluriel(len(table), 'dossier')} · cliquez une ligne pour ouvrir "
                f"sa fiche")
     evenement = st.dataframe(
         affichage.sort_values(affichage.columns[0], ascending=False),
@@ -1014,7 +1478,9 @@ def page_donnees() -> None:
 # =============================================================================
 #  ROUTAGE
 # =============================================================================
-if PAGE == "synthese":
+if PAGE == "accueil":
+    page_accueil()
+elif PAGE == "synthese":
     page_synthese()
 elif PAGE == "insights":
     page_insights()

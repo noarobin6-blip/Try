@@ -1,0 +1,37 @@
+[
+  {
+    "file": "looks/look1.png",
+    "width": 379,
+    "height": 1080,
+    "center": 154.5,
+    "pitch": 353.5
+  },
+  {
+    "file": "looks/look2.png",
+    "width": 340,
+    "height": 1080,
+    "center": 141.0,
+    "pitch": 374.0
+  },
+  {
+    "file": "looks/look3.png",
+    "width": 344,
+    "height": 1080,
+    "center": 176.0,
+    "pitch": 342.4
+  },
+  {
+    "file": "looks/look4.png",
+    "width": 317,
+    "height": 1080,
+    "center": 147.5,
+    "pitch": 353.0
+  },
+  {
+    "file": "looks/look5.png",
+    "width": 362,
+    "height": 1080,
+    "center": 186.5,
+    "pitch": 342.4
+  }
+]

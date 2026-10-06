@@ -29,6 +29,11 @@ const FACES: Face[] = [
     file: `jetbrains-mono-latin-${weight}-normal.woff2`,
     weight,
   })),
+  ...["300", "500", "800", "900"].map((weight) => ({
+    family: "Unbounded",
+    file: `unbounded-latin-${weight}-normal.woff2`,
+    weight,
+  })),
   ...["400", "700", "900"].map((weight) => ({
     family: "Playfair Display",
     file: `playfair-display-latin-${weight}-normal.woff2`,
@@ -52,4 +57,5 @@ export const FONTS = {
   serif: "'Instrument Serif', 'Playfair Display', serif",
   editorial: "'Playfair Display', serif",
   mono: "'JetBrains Mono', monospace",
+  wide: "Unbounded, 'Space Grotesk', sans-serif",
 } as const;

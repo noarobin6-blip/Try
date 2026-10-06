@@ -19,7 +19,7 @@ Sources : `remotion-dev/skills`, `greensock/gsap-skills`, `emilkowalski/skills`,
 - **Assets** : images, sons, Lottie JSON dans `public/`, chargés via `staticFile()`. Pas d'URL distante au rendu. Les Lottie du dashboard sont dans `../assets/`.
 - **Animation** : piloter tout par `useCurrentFrame()` (`spring`, `interpolate`, `@remotion/transitions`). GSAP seulement en timeline pausée et seekée sur la frame courante — jamais en lecture temps réel.
 - **Navigateur** : `remotion.config.ts` utilise le headless shell de Playwright quand il est présent (le téléchargement Chrome de Remotion est bloqué ici).
-- `SmokeTest` est une composition de vérification ; la remplacer par la vraie vidéo.
+- Tenues détourées dans `public/looks` (données dans `src/looks.ts`). Compositions : `P1-Defile`, `P2-LequelTuPrends`, `P3-Carrousel`.
 
 ## Commandes
 
